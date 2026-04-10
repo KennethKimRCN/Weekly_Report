@@ -1,4 +1,5 @@
 import React from 'react'
+import { createPortal } from 'react-dom'
 
 interface ModalProps {
   title: string
@@ -9,7 +10,9 @@ interface ModalProps {
 }
 
 export function Modal({ title, onClose, children, footer, size = 'default' }: ModalProps) {
-  return (
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`modal ${size === 'lg' ? 'modal-lg' : ''}`}>
         <div className="modal-header">
@@ -23,6 +26,7 @@ export function Modal({ title, onClose, children, footer, size = 'default' }: Mo
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
