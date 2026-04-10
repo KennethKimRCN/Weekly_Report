@@ -657,7 +657,7 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
 
         <button
           type="button"
-          onClick={() => setDetailOpen(true)}
+          onClick={() => setExpanded((value) => !value)}
           className="report-issue-hitarea"
           style={{
             flex: 1,
@@ -667,8 +667,9 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
             textAlign: 'left',
             background: 'none',
             border: 'none',
-            padding: 0,
+            padding: '10px 12px',
             cursor: 'pointer',
+            borderRadius: 'var(--radius-sm)',
           }}
         >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -687,7 +688,7 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
         </button>
       </div>
 
-      {expanded && (
+      <div className={`report-issue-progress-collapse ${expanded ? 'is-expanded' : ''}`}>
         <button
           type="button"
           onClick={() => setDetailOpen(true)}
@@ -696,7 +697,7 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
             marginTop: 10,
             marginLeft: 24,
             borderLeft: '2px solid var(--border-2)',
-            paddingLeft: 14,
+            padding: '4px 0 4px 14px',
             width: 'calc(100% - 24px)',
             background: 'none',
             borderTop: 'none',
@@ -704,6 +705,7 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
             borderBottom: 'none',
             cursor: 'pointer',
             textAlign: 'left',
+            borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
           }}
         >
           {issue.issue_progresses.length === 0 ? (
@@ -721,7 +723,7 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
             </div>
           ))}
         </button>
-      )}
+      </div>
       </div>
 
       {detailOpen && (

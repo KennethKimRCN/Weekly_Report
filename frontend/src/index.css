@@ -1046,10 +1046,14 @@ tr.clickable:focus-visible td { background: var(--blue-light); }
   gap: 12px;
   margin-bottom: 10px;
   position: sticky;
-  top: 16px;
+  top: 0;
   z-index: 6;
   background: var(--surface);
-  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-2);
+  box-shadow: 0 8px 18px rgba(32, 33, 36, .06);
+  margin-left: -4px;
+  margin-right: -4px;
+  padding: 8px 4px 10px;
 }
 .project-name {
   font-family: 'Google Sans', sans-serif;
@@ -1117,7 +1121,7 @@ tr.clickable:focus-visible td { background: var(--blue-light); }
   border-radius: var(--radius-sm);
   transition: background .12s ease;
   position: sticky;
-  top: 72px;
+  top: 60px;
   z-index: 5;
   background: var(--surface);
 }
@@ -1263,6 +1267,23 @@ tr.clickable:focus-visible td { background: var(--blue-light); }
 
 .report-issue-progress-hitarea:hover {
   transform: translateX(2px);
+}
+
+.report-issue-progress-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows .22s ease, opacity .18s ease;
+}
+
+.report-issue-progress-collapse.is-expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.report-issue-progress-collapse > * {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .report-milestone-table tbody tr {

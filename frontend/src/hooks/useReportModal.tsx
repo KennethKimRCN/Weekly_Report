@@ -10,16 +10,10 @@ import type { ReportFull } from '../types'
 /**
  * Shared hook for opening a report in a read-only modal viewer.
  * Handles fetch, state, and renders both the viewer and approve/reject modals.
- *
- * Usage:
- *   const { openReport, modals } = useReportModal({ onApproved: load })
- *   ...
- *   <button onClick={() => openReport(id)} />
- *   {modals}
  */
 export function useReportModal({ onApproved }: { onApproved?: () => void } = {}) {
   const [viewReport, setViewReport] = useState<ReportFull | null>(null)
-  const [approveId, setApproveId]   = useState<number | null>(null)
+  const [approveId, setApproveId] = useState<number | null>(null)
   const { user } = useAuthStore()
 
   async function openReport(id: number) {
@@ -41,7 +35,10 @@ export function useReportModal({ onApproved }: { onApproved?: () => void } = {})
               {viewReport.status_id === 2 && user?.is_admin === 1 && (
                 <button
                   className="btn btn-primary"
-                  onClick={() => { setApproveId(viewReport.id); setViewReport(null) }}
+                  onClick={() => {
+                    setApproveId(viewReport.id)
+                    setViewReport(null)
+                  }}
                 >
                   검토하기
                 </button>

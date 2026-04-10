@@ -198,7 +198,7 @@ export interface LookupData {
   schedule_types: Lookup[]
   tags: Lookup[]
   departments: (Lookup & { code: string | null })[]
-  users_simple: { id: number; name: string; rank_id: number }[]
+  users_simple: { id: number; name: string; rank_id: number; rank_name?: string }[]
 }
 
 // ── Analytics ─────────────────────────────────────────────────────────────

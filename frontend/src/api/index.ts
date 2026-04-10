@@ -118,6 +118,15 @@ export const projectsApi = {
 
   update: (id: number, data: Partial<Project> & { assignee_ids?: number[] }) =>
     http.put<Project>(`/projects/${id}`, data),
+
+  downloadImportTemplate: () =>
+    http.get<Blob>('/projects/import/template', { responseType: 'blob' as const }),
+
+  importExcel: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return http.post<ProjectImportSummary>('/projects/import', formData)
+  },
 }
 
 // ── Schedule ──────────────────────────────────────────────────────────────
@@ -245,6 +254,14 @@ export interface ProjectRecord {
   milestones: Milestone[]
   issues: ProjectIssue[]
   assignees: { id: number; name: string; rank_name: string }[]
+}
+export interface ProjectImportSummary {
+  projects_created: number
+  projects_updated: number
+  milestones_created: number
+  issues_created: number
+  progress_created: number
+  warnings: string[]
 }
 export interface CarryPreviewProject {
   project_id: number; project_name: string; company: string

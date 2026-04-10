@@ -2,28 +2,40 @@ from datetime import date, timedelta
 from .session import get_db
 from ..core.config import sunday_of_week
 
+REPORT_BACKFILL_START = date(2025, 4, 1)
+
+
+def _first_sunday_on_or_after(d: date) -> date:
+    days_until_sunday = (6 - d.weekday()) % 7
+    return d + timedelta(days=days_until_sunday)
+
 
 def _ensure_current_week_reports():
-    """Auto-create draft reports for every active non-deleted user for the current week."""
+    """Auto-create draft reports for every active non-deleted user from April 2025 through the current week."""
     today = date.today()
-    ws = sunday_of_week(today)
-    week_start_str = ws.isoformat()
-    iso = ws.isocalendar()
-    year, week_number = iso[0], iso[1]
+    current_week_start = sunday_of_week(today)
+    start_week = _first_sunday_on_or_after(REPORT_BACKFILL_START)
+
     with get_db() as conn:
         users = conn.execute("SELECT id FROM users WHERE is_deleted=0").fetchall()
-        for u in users:
-            uid = u["id"]
-            if not conn.execute(
-                "SELECT id FROM reports WHERE owner_id=? AND week_start=?",
-                (uid, week_start_str),
-            ).fetchone():
-                conn.execute(
-                    """INSERT INTO reports(owner_id,week_start,year,week_number,
-                                          status_id,visibility,created_by,updated_by)
-                       VALUES(?,?,?,?,1,'team',?,?)""",
-                    (uid, week_start_str, year, week_number, uid, uid),
-                )
+        week_start = start_week
+        while week_start <= current_week_start:
+            week_start_str = week_start.isoformat()
+            iso = week_start.isocalendar()
+            year, week_number = iso[0], iso[1]
+            for u in users:
+                uid = u["id"]
+                if not conn.execute(
+                    "SELECT id FROM reports WHERE owner_id=? AND week_start=?",
+                    (uid, week_start_str),
+                ).fetchone():
+                    conn.execute(
+                        """INSERT INTO reports(owner_id,week_start,year,week_number,
+                                              status_id,visibility,created_by,updated_by)
+                           VALUES(?,?,?,?,1,'team',?,?)""",
+                        (uid, week_start_str, year, week_number, uid, uid),
+                    )
+            week_start += timedelta(days=7)
 
 
 def init_db():
