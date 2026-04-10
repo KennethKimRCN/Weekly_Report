@@ -1045,6 +1045,11 @@ tr.clickable:focus-visible td { background: var(--blue-light); }
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
+  position: sticky;
+  top: 16px;
+  z-index: 6;
+  background: var(--surface);
+  padding-bottom: 10px;
 }
 .project-name {
   font-family: 'Google Sans', sans-serif;
@@ -1111,6 +1116,10 @@ tr.clickable:focus-visible td { background: var(--blue-light); }
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   transition: background .12s ease;
+  position: sticky;
+  top: 72px;
+  z-index: 5;
+  background: var(--surface);
 }
 .report-subsection-header:hover {
   background: var(--surface-2);
@@ -1345,6 +1354,13 @@ tr.clickable:focus-visible td { background: var(--blue-light); }
   margin-top: 8px;
   font-size: 11px;
   color: var(--ink-4);
+}
+
+.report-history-modal {
+  max-width: min(920px, calc(100vw - 40px));
+  width: min(920px, calc(100vw - 40px));
+  max-height: min(80vh, 760px);
+  margin: auto;
 }
 
 /* ── Personal schedule week list ─────────────────────────────────────────── */

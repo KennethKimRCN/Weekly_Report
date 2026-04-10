@@ -728,6 +728,8 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
         <Modal
           title={issue.title}
           onClose={() => setDetailOpen(false)}
+          size="lg"
+          className="report-history-modal"
           footer={<button className="btn btn-ghost" onClick={() => setDetailOpen(false)}>닫기</button>}
         >
           <div style={{ display: 'grid', gap: 16 }}>
