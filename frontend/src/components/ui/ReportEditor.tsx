@@ -100,6 +100,12 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
       .sort((a, b) => a.solution.localeCompare(b.solution))
   }, [report.projects])
   const [collapsedSolutions, setCollapsedSolutions] = useState<Record<string, boolean>>({})
+  const reportMetrics = [
+    { num: report.projects.length, lbl: '프로젝트' },
+    { num: totalSchedules, lbl: '마일스톤' },
+    { num: totalIssues, lbl: '이슈' },
+    { num: totalProgress, lbl: '진행내역' },
+  ]
 
   function toggleSolution(solution: string) {
     setCollapsedSolutions((current) => ({ ...current, [solution]: !current[solution] }))
@@ -127,7 +133,8 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
     <div className="report-editor">
       <div className="report-hero">
         <div className="report-hero-top">
-          <div>
+          <div className="report-hero-copy">
+            <div className="report-hero-kicker">Weekly overview</div>
             <h2 className="report-owner">
               {report.owner_name}님 보고서
               <span className={`chip ${REPORT_STATUS_CHIP[report.status_id]}`}>
@@ -135,21 +142,19 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
               </span>
             </h2>
             <div className="report-week">주간: {report.week_start}</div>
+            <p className="report-hero-description">
+              이번 주 프로젝트 진행상황, 일정, 협업 메모를 한 화면에서 정리했습니다.
+            </p>
           </div>
-        </div>
 
-        <div className="report-stats">
-          {[
-            { num: report.projects.length, lbl: '프로젝트' },
-            { num: totalSchedules, lbl: '마일스톤' },
-            { num: totalIssues, lbl: '이슈' },
-            { num: totalProgress, lbl: '진행내역' },
-          ].map(({ num, lbl }) => (
-            <div key={lbl} className="report-stat">
-              <span className="report-stat-num">{num}</span>
-              <span className="report-stat-lbl">{lbl}</span>
-            </div>
-          ))}
+          <div className="report-stats">
+            {reportMetrics.map(({ num, lbl }) => (
+              <div key={lbl} className="report-stat">
+                <span className="report-stat-num">{num}</span>
+                <span className="report-stat-lbl">{lbl}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="report-actions">
@@ -171,7 +176,10 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
             )
           )}
           {report.manager_comment && (
-            <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>관리자 코멘트: {report.manager_comment}</span>
+            <div className="report-manager-note">
+              <span className="report-manager-note-label">관리자 코멘트</span>
+              <span className="report-manager-note-body">{report.manager_comment}</span>
+            </div>
           )}
         </div>
       </div>
@@ -179,10 +187,11 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
       <div className="panel">
         <div className="panel-header">
           <div>
+            <div className="panel-eyebrow">핵심 업무</div>
             <div className="panel-title">업무 현황</div>
           </div>
           {canEdit && (
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="panel-actions">
               <CarryButton reportId={report.id} onDone={onRefresh} />
               <AddProjectButton reportId={report.id} onAdded={onRefresh} isAdmin={isAdmin} />
             </div>
@@ -192,9 +201,9 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
         {groupedProjects.length === 0 ? (
           <div className="panel-empty">프로젝트를 추가하면 해당 주차의 마일스톤과 이슈 진행내역을 자동으로 가져옵니다.</div>
         ) : (
-          <div className="panel-body" style={{ display: 'grid', gap: 20 }}>
+          <div className="panel-body report-panel-body">
             {groupedProjects.map((group) => (
-              <section key={group.solution} className="report-solution-group" style={{ display: 'grid', gap: 12 }}>
+              <section key={group.solution} className="report-solution-group">
                 <button
                   type="button"
                   className="report-collapse-header"
@@ -202,11 +211,11 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
                   style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', textAlign: 'left' }}
                 >
                   <span className="report-collapse-icon">{collapsedSolutions[group.solution] ? '▸' : '▾'}</span>
-                  <span className="chip chip-active">{group.solution}</span>
-                  <span className="text-sm text-muted">{group.projects.length}개 프로젝트</span>
+                  <span className="report-solution-title">{group.solution}</span>
+                  <span className="report-solution-count">{group.projects.length}개 프로젝트</span>
                 </button>
                 {!collapsedSolutions[group.solution] && (
-                  <div style={{ display: 'grid', gap: 16 }}>
+                  <div className="report-solution-list">
                     {group.projects.map((project) => (
                       <ProjectCard
                         key={project.project_id}
@@ -236,7 +245,7 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
         {report.week_schedule.length === 0 ? (
           <div className="panel-empty">이번 주 개인 일정이 없습니다.</div>
         ) : (
-          <div className="panel-body" style={{ paddingTop: 8, paddingBottom: 8 }}>
+          <div className="panel-body panel-body-compact">
             <div className="week-list">
               {report.week_schedule.map((item) => (
                 <div key={item.id} className="week-row">
@@ -316,11 +325,11 @@ function AddProjectButton({ reportId, onAdded, isAdmin }: { reportId: number; on
             onChange={(e) => setFilter(e.target.value)}
             placeholder="프로젝트 또는 솔루션 검색"
             autoFocus
-            style={{ marginBottom: 10 }}
+            className="modal-search-input"
           />
-          <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+          <div className="project-picker-list">
             {filtered.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '28px 0', fontSize: 13, color: 'var(--ink-4)' }}>추가 가능한 프로젝트가 없습니다.</div>
+              <div className="project-picker-empty">추가 가능한 프로젝트가 없습니다.</div>
             ) : filtered.map((project) => (
               <div key={project.id} className="pick-item" onClick={() => add(project.id)}>
                 <div className="fw-500" style={{ fontSize: 13 }}>{project.project_name}</div>
@@ -413,9 +422,9 @@ function ProjectCard({
   }
 
   return (
-    <article className="project-card report-project-card" style={{ display: 'grid', gap: 16, padding: 20, border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', background: 'var(--panel)', boxShadow: 'var(--shadow-sm)' }}>
-      <div className="project-card-header" style={{ alignItems: 'flex-start' }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flex: 1, minWidth: 0 }}>
+    <article className="project-card report-project-card">
+      <div className="project-card-header">
+        <div className="project-card-main">
           <button
             className="report-collapse-header"
             type="button"
@@ -424,8 +433,8 @@ function ProjectCard({
             title={projectExpanded ? '프로젝트 접기' : '프로젝트 펼치기'}
           >
             <span className="report-collapse-icon">{projectExpanded ? '▾' : '▸'}</span>
-            <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-              <div className="project-name" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div className="project-card-copy">
+              <div className="project-name">
                 <span>{rp.project_name}</span>
                 <span className={`chip ${projectStatus === 'active' ? 'chip-active' : projectStatus === 'on_hold' ? 'chip-on_hold' : projectStatus === 'completed' ? 'chip-completed' : 'chip-cancelled'}`}>
                   {PROJECT_STATUS_OPTIONS.find((option) => option.value === projectStatus)?.label}
@@ -440,14 +449,14 @@ function ProjectCard({
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div className="project-toolbar">
           <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/projects/${rp.project_id}`)}>프로젝트 열기</button>
           <button className="btn btn-ghost btn-sm" disabled={refreshing} onClick={refreshProject}>
             {refreshing ? '새로고침 중...' : '새로고침'}
           </button>
           {!readOnly && (
             <>
-              <select value={projectStatus} onChange={(e) => { setProjectStatus(e.target.value as ProjectStatus); markDirty() }} style={{ width: 120 }}>
+              <select className="status-select" value={projectStatus} onChange={(e) => { setProjectStatus(e.target.value as ProjectStatus); markDirty() }}>
                 {PROJECT_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               {confirmRemove ? (
@@ -467,9 +476,9 @@ function ProjectCard({
       </div>
 
       <div className="project-mini-stats">
-        <div className="mini-stat"><span className="mini-stat-num">{rp.project_schedules.length}</span>&nbsp;마일스톤</div>
-        <div className="mini-stat"><span className="mini-stat-num">{rp.issue_items.length}</span>&nbsp;이슈</div>
-        <div className="mini-stat"><span className="mini-stat-num">{progressCount}</span>&nbsp;주간 진행내역</div>
+        <div className="mini-stat"><span className="mini-stat-num">{rp.project_schedules.length}</span><span className="mini-stat-label">마일스톤</span></div>
+        <div className="mini-stat"><span className="mini-stat-num">{rp.issue_items.length}</span><span className="mini-stat-label">이슈</span></div>
+        <div className="mini-stat"><span className="mini-stat-num">{progressCount}</span><span className="mini-stat-label">주간 진행내역</span></div>
       </div>
       {projectExpanded && (
         <>
@@ -478,9 +487,10 @@ function ProjectCard({
               <span className="subsection-title">보고서 메모</span>
             </div>
             {readOnly ? (
-              <div style={{ fontSize: 13, color: 'var(--ink-2)' }}>{remarks || '메모가 없습니다.'}</div>
+              <div className="project-remarks-block">{remarks || '메모가 없습니다.'}</div>
             ) : (
               <textarea
+                className="project-remarks-input"
                 rows={2}
                 value={remarks}
                 onChange={(e) => { setRemarks(e.target.value); markDirty() }}
@@ -505,7 +515,7 @@ function ProjectCard({
               rp.project_schedules.length === 0 ? (
                 <div style={{ fontSize: 12, color: 'var(--ink-5)' }}>집계된 마일스톤이 없습니다.</div>
               ) : (
-                <div className="table-wrap report-milestone-table" style={{ border: 'none', borderRadius: 'var(--radius)' }}>
+                <div className="table-wrap report-milestone-table report-surface-table">
                   <table>
                     <thead>
                       <tr>
@@ -551,7 +561,7 @@ function ProjectCard({
               rp.issue_items.length === 0 ? (
                 <div style={{ fontSize: 12, color: 'var(--ink-5)' }}>이번 주에 반영된 이슈 진행내역이 없습니다.</div>
               ) : (
-                <div style={{ display: 'grid', gap: 10 }}>
+                <div className="report-issue-list">
                   {rp.issue_items.map((issue) => (
                     <ReportIssueCard key={issue.id} issue={issue} />
                   ))}
@@ -594,7 +604,7 @@ function CommentsSection({ reportId, comments, onAdded }: { reportId: number; co
       </div>
       <div className="panel-body">
         {comments.length === 0 ? (
-          <div style={{ fontSize: 13, color: 'var(--ink-4)', textAlign: 'center', padding: '16px 0' }}>아직 코멘트가 없습니다.</div>
+          <div className="comments-empty">아직 코멘트가 없습니다.</div>
         ) : (
           <div className="comment-list">
             {comments.map((comment) => (
@@ -611,7 +621,7 @@ function CommentsSection({ reportId, comments, onAdded }: { reportId: number; co
             ))}
           </div>
         )}
-        <div className="comment-input">
+        <div className="comment-input comment-composer">
           <textarea
             rows={2}
             value={text}
@@ -619,7 +629,7 @@ function CommentsSection({ reportId, comments, onAdded }: { reportId: number; co
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) post() }}
             placeholder="코멘트를 입력하세요."
           />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div className="comment-composer-actions">
             <span className="comment-hint">Ctrl+Enter로 빠르게 등록</span>
             <button className="btn btn-primary btn-sm" disabled={!text.trim() || posting} onClick={post}>
               {posting ? '등록 중...' : '코멘트 등록'}
@@ -644,10 +654,10 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
 
   return (
     <>
-      <div style={{ borderBottom: '1px solid var(--border-2)', padding: '14px 20px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+      <div className="report-issue-card">
+      <div className="report-issue-row">
         <button
-          style={{ background: 'none', border: 'none', padding: '2px 0', cursor: 'pointer', color: 'var(--ink-4)', flexShrink: 0, marginTop: 1 }}
+          className="report-issue-toggle"
           onClick={() => setExpanded((value) => !value)}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s' }}>
@@ -659,31 +669,20 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
           type="button"
           onClick={() => setExpanded((value) => !value)}
           className="report-issue-hitarea"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            display: 'block',
-            width: '100%',
-            textAlign: 'left',
-            background: 'none',
-            border: 'none',
-            padding: '10px 12px',
-            cursor: 'pointer',
-            borderRadius: 'var(--radius-sm)',
-          }}
+          style={{ flex: 1, minWidth: 0, display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '10px 12px', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
         >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 500, fontSize: 14, color: 'var(--ink)' }}>{issue.title}</span>
+            <div className="report-issue-title-row">
+            <span className="report-issue-title">{issue.title}</span>
             <span className={`chip ${PRIORITY_CHIP[priorityKey] ?? 'chip-on_hold'}`} style={{ fontSize: 10 }}>
               {PRIORITY_LABEL[priorityKey] ?? '중요'}
             </span>
             <span className={`chip ${statusChip}`} style={{ fontSize: 10 }}>{issue.status}</span>
+            <span className="report-issue-count">{issue.issue_progresses.length}개 진행내역</span>
             </div>
-            {issue.details && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>{issue.details}</div>}
-            <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>
+            {issue.details && <div className="report-issue-summary">{issue.details}</div>}
+            <div className="report-issue-meta">
               {issue.start_date}
               {issue.end_date ? ` ~ ${issue.end_date}` : ''}
-              {issue.issue_progresses.length > 0 && ` · ${issue.issue_progresses.length}개 진행내역`}
             </div>
         </button>
       </div>
@@ -693,32 +692,19 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
           type="button"
           onClick={() => setDetailOpen(true)}
           className="report-issue-hitarea report-issue-progress-hitarea"
-          style={{
-            marginTop: 10,
-            marginLeft: 24,
-            borderLeft: '2px solid var(--border-2)',
-            padding: '4px 0 4px 14px',
-            width: 'calc(100% - 24px)',
-            background: 'none',
-            borderTop: 'none',
-            borderRight: 'none',
-            borderBottom: 'none',
-            cursor: 'pointer',
-            textAlign: 'left',
-            borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
-          }}
+          style={{ cursor: 'pointer', textAlign: 'left' }}
         >
           {issue.issue_progresses.length === 0 ? (
-            <div style={{ fontSize: 12, color: 'var(--ink-5)', padding: '4px 0' }}>진행내역이 없습니다.</div>
+            <div className="report-issue-progress-empty">진행내역이 없습니다.</div>
           ) : issue.issue_progresses.map((progress) => (
-            <div key={progress.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '6px 0', borderBottom: '1px solid var(--border-2)' }}>
-              <div style={{ width: 108, fontSize: 11, color: 'var(--ink-4)', flexShrink: 0, paddingTop: 2 }}>
+            <div key={progress.id} className="report-issue-progress-row">
+              <div className="report-issue-progress-date">
                 {progress.start_date}{progress.end_date && progress.end_date !== progress.start_date ? ` ~ ${progress.end_date}` : ''}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{progress.title}</div>
-                {progress.details && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>{progress.details}</div>}
-                {progress.author_name && <div style={{ fontSize: 11, color: 'var(--ink-5)', marginTop: 2 }}>{progress.author_name}</div>}
+              <div className="report-issue-progress-copy">
+                <div className="report-issue-progress-title">{progress.title}</div>
+                {progress.details && <div className="report-issue-progress-detail">{progress.details}</div>}
+                {progress.author_name && <div className="report-issue-progress-author">{progress.author_name}</div>}
               </div>
             </div>
           ))}

@@ -17,12 +17,14 @@ export default function MyReport() {
     if (!user) return
     setReport(undefined)
     setNotFound(false)
+
     try {
       const res = await reportsApi.list({ owner_id: user.id, week_start: ws })
       if (!res.data.length) {
         setNotFound(true)
         return
       }
+
       const full = await reportsApi.get(res.data[0].id)
       setReport(full.data)
     } catch {
@@ -39,27 +41,39 @@ export default function MyReport() {
       const ok = window.confirm('저장되지 않은 변경사항이 있습니다. 이동하면 변경사항이 사라집니다. 계속하시겠습니까?')
       if (!ok) return
     }
-    if (dir === 'today') setWeek(sundayOfToday())
-    else setWeek((w) => shiftWeek(w, dir))
+
+    if (dir === 'today') {
+      setWeek(sundayOfToday())
+      return
+    }
+
+    setWeek((currentWeek) => shiftWeek(currentWeek, dir))
   }
 
   return (
     <div>
       <div className="page-header">
         <div>
+          <div className="panel-eyebrow">My workspace</div>
           <div className="page-title">내 보고서</div>
-          <div className="page-subtitle">주간 업무 보고서를 작성하고 관리합니다.</div>
+          <div className="page-subtitle">이번 주 업무 흐름을 한눈에 보고 필요한 내용만 펼쳐서 정리할 수 있습니다.</div>
         </div>
 
         <div className="week-nav">
           <button className="week-nav-btn" onClick={() => navigateWeek(-1)} title="이전 주">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
           </button>
           <div className="week-nav-label">{weekLabel(week)}</div>
           <button className="week-nav-btn" onClick={() => navigateWeek(1)} title="다음 주">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
           </button>
-          <button className="week-nav-btn week-nav-today" onClick={() => navigateWeek('today')}>이번 주</button>
+          <button className="week-nav-btn week-nav-today" onClick={() => navigateWeek('today')}>
+            이번 주
+          </button>
         </div>
       </div>
 
