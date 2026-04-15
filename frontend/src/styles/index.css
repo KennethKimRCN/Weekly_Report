@@ -1,0 +1,22 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   WeeklyReport — Main stylesheet
+   Imports all modular CSS files in dependency order.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 1. Design tokens, CSS variables, base reset & typography */
+@import './tokens.css';
+
+/* 2. App shell, sidebar, topbar & page structure */
+@import './layout.css';
+
+/* 3. Core UI components: buttons, forms, cards, chips, tables, etc. */
+@import './components.css';
+
+/* 4. Report editor, panels, project cards & related */
+@import './report-editor.css';
+
+/* 5. Project record: kanban, milestone timeline, issue detail, search bars */
+@import './project-record.css';
+
+/* 6. Responsive breakpoints */
+@import './responsive.css';

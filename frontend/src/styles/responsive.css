@@ -1,0 +1,73 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   responsive.css — Breakpoint overrides for all screen sizes
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 960px) {
+  .grid-4 { grid-template-columns: 1fr 1fr; }
+  .grid-2 { grid-template-columns: 1fr; }
+  .editor-grid-4 { grid-template-columns: 1fr 1fr; }
+  .editor-grid-3 { grid-template-columns: 1fr; }
+  .schedule-col-headers, .schedule-row { grid-template-columns: 1fr 120px 120px 36px; }
+  .project-mini-stats { grid-template-columns: 1fr; }
+  .kanban-board { grid-template-columns: repeat(2, minmax(260px, 1fr)); }
+}
+
+@media (max-width: 768px) {
+  /* Mobile sidebar becomes a fixed overlay drawer */
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    height: 100vh;
+    width: var(--sidebar-w) !important;
+    transform: translateX(-100%);
+    z-index: 100;
+    box-shadow: var(--shadow-3);
+  }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .sidebar-backdrop { display: block; }
+  .sidebar-backdrop.hidden { display: none; }
+
+  /* Restore nav item layout in mobile overlay */
+  .sidebar .nav-item {
+    justify-content: flex-start;
+    margin: 1px 8px 1px 0;
+    padding: 10px 16px;
+    border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+    width: calc(100% - 8px);
+  }
+  .sidebar .nav-label { display: inline; }
+  .sidebar .sidebar-logo,
+  .sidebar .nav-section-label,
+  .sidebar .sidebar-user-info { display: block; }
+
+  /* Main area fills full width */
+  .main-area { width: 100%; }
+  .topbar-search { max-width: none; }
+  .topbar-breadcrumb { display: none; }
+
+  /* Show mobile hamburger in topbar */
+  #mobile-menu-btn { display: inline-flex !important; }
+
+  /* Issue detail panel: full width */
+  .issue-detail-panel { width: 100vw; }
+}
+
+@media (max-width: 640px) {
+  .page-content { padding: 16px; }
+  .grid-4 { grid-template-columns: 1fr 1fr; }
+  .project-card-header { flex-direction: column; }
+  .project-toolbar { justify-content: flex-start; }
+  .report-stats { grid-template-columns: 1fr 1fr; width: 100%; }
+  .report-issue-progress-row { flex-direction: column; gap: 4px; }
+  .report-issue-progress-date { width: auto; }
+  .kanban-board { grid-template-columns: 1fr; }
+  .schedule-col-headers, .schedule-row { grid-template-columns: 1fr 100px 36px; }
+  .schedule-col-headers span:nth-child(3),
+  .schedule-row .schedule-input:nth-child(3) { display: none; }
+}
+
+@media (max-width: 480px) {
+  .week-nav-label { min-width: 120px; font-size: 12px; }
+  .login-card { width: 100%; margin: 0 16px; padding: 36px 24px; }
+  .grid-2 { grid-template-columns: 1fr; }
+}
