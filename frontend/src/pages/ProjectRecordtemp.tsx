@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+﻿import { useEffect, useState, useMemo, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { projectRecordApi, type Milestone, type ProjectIssue } from '../api'
 import type { ProjectRecord as PR } from '../api'
@@ -8,6 +8,20 @@ import { Modal } from '../components/ui/Modal'
 import { PageSpinner } from '../components/ui'
 
 const MILESTONE_STATUS = ['planned', 'done', 'delayed', 'cancelled'] as const
+
+function Highlight({ text, query }: { text: string | null | undefined; query: string }) {
+  const t = text ?? ''
+  if (!query || !t) return <>{t}</>
+  const idx = t.toLowerCase().indexOf(query.toLowerCase())
+  if (idx === -1) return <>{t}</>
+  return (
+    <>
+      {t.slice(0, idx)}
+      <mark className="search-highlight">{t.slice(idx, idx + query.length)}</mark>
+      {t.slice(idx + query.length)}
+    </>
+  )
+}
 const MILESTONE_LABEL: Record<string, string> = {
   planned: '예정',
   done: '완료',
@@ -43,6 +57,11 @@ export default function ProjectRecord() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'issues' | 'milestones'>('issues')
   const [issueView, setIssueView] = useState<'kanban' | 'timeline'>('kanban')
+  const [issueSearch, setIssueSearch] = useState('')
+  const [issueSearchMode, setIssueSearchMode] = useState<'issue' | 'progress'>('issue')
+  const [issueRangeFrom, setIssueRangeFrom] = useState('')
+  const [issueRangeTo, setIssueRangeTo] = useState('')
+  const issueSearchRef = useRef<HTMLInputElement>(null)
 
   const [msModal, setMsModal] = useState<Partial<Milestone> | null>(null)
   const [issueModal, setIssueModal] = useState<Partial<ProjectIssue> | null>(null)
@@ -83,9 +102,52 @@ export default function ProjectRecord() {
 
   const canEdit = user?.is_admin === 1 || record.assignees.some((assignee) => assignee.id === user?.id)
   const openIssues = record.issues.filter((issue) => !['완료', '취소'].includes(issue.status))
+
+  const q = issueSearch.trim().toLowerCase()
+
+  const filteredIssues = useMemo(() => {
+    if (!record) return []
+    return record.issues.filter((issue) => {
+      // Time range filter: applies to issue dates (always) and also progress dates
+      const issueStart = issue.start_date
+      const issueEnd = issue.end_date ?? issue.start_date
+      const issueInRange =
+        (!issueRangeFrom || issueEnd >= issueRangeFrom) &&
+        (!issueRangeTo || issueStart <= issueRangeTo)
+
+      if (issueSearchMode === 'issue') {
+        if (!issueInRange) return false
+        if (!q) return true
+        return (
+          issue.title.toLowerCase().includes(q) ||
+          (issue.details ?? '').toLowerCase().includes(q)
+        )
+      } else {
+        // progress mode: issue is included if any of its progresses match text + date range
+        const matchingProgresses = issue.progresses.filter((p) => {
+          const pStart = p.start_date
+          const pEnd = p.end_date ?? p.start_date
+          const progInRange =
+            (!issueRangeFrom || pEnd >= issueRangeFrom) &&
+            (!issueRangeTo || pStart <= issueRangeTo)
+          if (!progInRange) return false
+          if (!q) return true
+          return (
+            p.title.toLowerCase().includes(q) ||
+            (p.details ?? '').toLowerCase().includes(q) ||
+            (p.author_name ?? '').toLowerCase().includes(q)
+          )
+        })
+        return matchingProgresses.length > 0
+      }
+    })
+  }, [record, q, issueSearchMode, issueRangeFrom, issueRangeTo])
+
+  const isIssueSearchActive = !!(q || issueRangeFrom || issueRangeTo)
+
   const issueColumns = ISSUE_STATUS_OPTIONS.map((status) => ({
     status,
-    issues: record.issues.filter((issue) => issue.status === status),
+    issues: filteredIssues.filter((issue) => issue.status === status),
   }))
 
   async function saveMilestone() {
@@ -235,7 +297,6 @@ export default function ProjectRecord() {
               <div className="panel-title">{issueView === 'kanban' ? '칸반 보드' : '타임라인'}</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {/* Kanban / Timeline toggle */}
               <div className="view-toggle">
                 <button
                   className={`view-toggle-btn ${issueView === 'kanban' ? 'active' : ''}`}
@@ -269,6 +330,105 @@ export default function ProjectRecord() {
             </div>
           </div>
 
+          {/* ── Issue Search Bar ── */}
+          <div className="issue-search-bar">
+            <div className="issue-search-row">
+              {/* Search mode toggle */}
+              <div className="issue-search-mode-toggle">
+                <button
+                  className={`ism-btn ${issueSearchMode === 'issue' ? 'active' : ''}`}
+                  onClick={() => setIssueSearchMode('issue')}
+                >
+                  이슈
+                </button>
+                <button
+                  className={`ism-btn ${issueSearchMode === 'progress' ? 'active' : ''}`}
+                  onClick={() => setIssueSearchMode('progress')}
+                >
+                  진행내역
+                </button>
+              </div>
+
+              {/* Text search */}
+              <div className="issue-search-input-wrap">
+                <svg className="issue-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input
+                  ref={issueSearchRef}
+                  value={issueSearch}
+                  onChange={(e) => setIssueSearch(e.target.value)}
+                  placeholder={issueSearchMode === 'issue' ? '이슈 제목, 내용 검색...' : '진행내역 제목, 내용, 작성자 검색...'}
+                  className="issue-search-input"
+                />
+                {issueSearch && (
+                  <button className="issue-search-clear" onClick={() => { setIssueSearch(''); issueSearchRef.current?.focus() }}>
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                      <line x1="4" y1="4" x2="12" y2="12" /><line x1="12" y1="4" x2="4" y2="12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              {/* Date range */}
+              <div className="issue-search-range">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ color: 'var(--ink-4)', flexShrink: 0 }}>
+                  <rect x="2" y="2" width="12" height="12" rx="2" /><line x1="5" y1="1" x2="5" y2="4" /><line x1="11" y1="1" x2="11" y2="4" /><line x1="2" y1="6" x2="14" y2="6" />
+                </svg>
+                <input
+                  type="date"
+                  value={issueRangeFrom}
+                  onChange={(e) => setIssueRangeFrom(e.target.value)}
+                  className="issue-date-input"
+                  title="시작 날짜"
+                />
+                <span className="issue-range-sep">~</span>
+                <input
+                  type="date"
+                  value={issueRangeTo}
+                  onChange={(e) => setIssueRangeTo(e.target.value)}
+                  className="issue-date-input"
+                  title="종료 날짜"
+                />
+              </div>
+
+              {/* Clear all */}
+              {isIssueSearchActive && (
+                <button
+                  className="issue-search-reset"
+                  onClick={() => { setIssueSearch(''); setIssueRangeFrom(''); setIssueRangeTo('') }}
+                >
+                  초기화
+                </button>
+              )}
+            </div>
+
+            {/* Result summary */}
+            {isIssueSearchActive && (
+              <div className="issue-search-summary">
+                <span className="iss-mode-badge">{issueSearchMode === 'issue' ? '이슈' : '진행내역'} 검색</span>
+                <span>
+                  {filteredIssues.length === record.issues.length
+                    ? `전체 ${record.issues.length}개`
+                    : <><strong>{filteredIssues.length}</strong>개 / 전체 {record.issues.length}개</>}
+                </span>
+                {issueRangeFrom || issueRangeTo ? (
+                  <span className="iss-range-chip">
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <rect x="2" y="2" width="12" height="12" rx="2" /><line x1="5" y1="1" x2="5" y2="4" /><line x1="11" y1="1" x2="11" y2="4" /><line x1="2" y1="6" x2="14" y2="6" />
+                    </svg>
+                    {issueRangeFrom || '…'} ~ {issueRangeTo || '…'}
+                    <button onClick={() => { setIssueRangeFrom(''); setIssueRangeTo('') }}>
+                      <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                        <line x1="2" y1="2" x2="10" y2="10" /><line x1="10" y1="2" x2="2" y2="10" />
+                      </svg>
+                    </button>
+                  </span>
+                ) : null}
+              </div>
+            )}
+          </div>
+
           <div className="panel-body">
             {issueView === 'kanban' ? (
               <div className="kanban-board">
@@ -286,16 +446,19 @@ export default function ProjectRecord() {
                         {column.status === '진행중' ? '현재 진행 중인 업무' : column.status === '초안' ? '정리 중인 업무' : column.status === '완료' ? '마무리된 업무' : '중단되거나 보류된 업무'}
                       </div>
                     </div>
-
                     <div className="kanban-column-body">
                       {column.issues.length === 0 ? (
-                        <div className="kanban-empty">이 상태의 이슈가 없습니다.</div>
+                        <div className="kanban-empty">{isIssueSearchActive ? '검색 결과 없음' : '이 상태의 이슈가 없습니다.'}</div>
                       ) : column.issues.map((issue) => (
                         <IssueCard
                           key={issue.id}
                           issue={issue}
                           canEdit={canEdit}
                           closed={column.status === '완료' || column.status === '취소'}
+                          searchQuery={q}
+                          searchMode={issueSearchMode}
+                          rangeFrom={issueRangeFrom}
+                          rangeTo={issueRangeTo}
                           onOpen={() => setDetailIssue(issue)}
                           onEdit={() => setIssueModal({ ...issue })}
                           onDelete={() => deleteIssue(issue.id)}
@@ -307,9 +470,10 @@ export default function ProjectRecord() {
               </div>
             ) : (
               <IssueTimeline
-                issues={record.issues}
+                issues={filteredIssues}
                 today={today}
                 canEdit={canEdit}
+                searchQuery={q}
                 onOpen={(issue) => setDetailIssue(issue)}
                 onEdit={(issue) => setIssueModal({ ...issue })}
               />
@@ -555,6 +719,10 @@ function IssueCard({
   issue,
   canEdit,
   closed = false,
+  searchQuery = '',
+  searchMode = 'issue',
+  rangeFrom = '',
+  rangeTo = '',
   onOpen,
   onEdit,
   onDelete,
@@ -562,6 +730,10 @@ function IssueCard({
   issue: ProjectIssue
   canEdit: boolean
   closed?: boolean
+  searchQuery?: string
+  searchMode?: 'issue' | 'progress'
+  rangeFrom?: string
+  rangeTo?: string
   onOpen: () => void
   onEdit: () => void
   onDelete: () => void
@@ -569,6 +741,22 @@ function IssueCard({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const priority = PRIORITY_OPTIONS.find((option) => option.value === issue.priority) ?? PRIORITY_OPTIONS[0]
   const statusChip = issue.status === '완료' ? 'chip-approved' : issue.status === '취소' ? 'chip-cancelled' : issue.status === '진행중' ? 'chip-submitted' : 'chip-draft'
+
+  // When in progress search mode, show matching progress snippets inline on the card
+  const matchingProgresses = searchMode === 'progress' && (searchQuery || rangeFrom || rangeTo)
+    ? issue.progresses.filter((p) => {
+        const pStart = p.start_date
+        const pEnd = p.end_date ?? p.start_date
+        const inRange = (!rangeFrom || pEnd >= rangeFrom) && (!rangeTo || pStart <= rangeTo)
+        if (!inRange) return false
+        if (!searchQuery) return true
+        return (
+          p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (p.details ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (p.author_name ?? '').toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      })
+    : []
 
   return (
     <div
@@ -581,11 +769,21 @@ function IssueCard({
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 500, fontSize: 14, color: 'var(--ink)' }}>{issue.title}</span>
+            <span style={{ fontWeight: 500, fontSize: 14, color: 'var(--ink)' }}>
+              {searchMode === 'issue' && searchQuery
+                ? <Highlight text={issue.title} query={searchQuery} />
+                : issue.title}
+            </span>
             <span className={`chip ${priority.chip}`} style={{ fontSize: 10 }}>{priority.label}</span>
             <span className={`chip ${statusChip}`} style={{ fontSize: 10 }}>{issue.status}</span>
           </div>
-          {issue.details && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>{issue.details}</div>}
+          {issue.details && (
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>
+              {searchMode === 'issue' && searchQuery
+                ? <Highlight text={issue.details} query={searchQuery} />
+                : issue.details}
+            </div>
+          )}
           <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>
             {issue.start_date}
             {issue.end_date ? ` ~ ${issue.end_date}` : ''}
@@ -612,7 +810,24 @@ function IssueCard({
         )}
       </div>
 
-      {issue.progresses.length > 0 && (
+      {/* Matching progress snippets shown inline when in progress search mode */}
+      {matchingProgresses.length > 0 && (
+        <div className="issue-card-prog-snippets">
+          {matchingProgresses.slice(0, 3).map((p) => (
+            <div key={p.id} className="issue-card-prog-snippet">
+              <span className="icps-date">{p.start_date}{p.end_date && p.end_date !== p.start_date ? ` ~ ${p.end_date}` : ''}</span>
+              <span className="icps-title"><Highlight text={p.title} query={searchQuery} /></span>
+              {p.details && <span className="icps-details"><Highlight text={p.details} query={searchQuery} /></span>}
+            </div>
+          ))}
+          {matchingProgresses.length > 3 && (
+            <div className="icps-more">+{matchingProgresses.length - 3}개 더 보기</div>
+          )}
+        </div>
+      )}
+
+      {/* Progress count hint (when not in search mode) */}
+      {matchingProgresses.length === 0 && issue.progresses.length > 0 && (
         <div className="issue-card-progress-hint">
           <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
             <circle cx="8" cy="8" r="6" /><line x1="8" y1="5" x2="8" y2="8" /><line x1="8" y1="8" x2="10" y2="10" />
@@ -767,12 +982,14 @@ function IssueTimeline({
   issues,
   today,
   canEdit,
+  searchQuery = '',
   onOpen,
   onEdit,
 }: {
   issues: ProjectIssue[]
   today: string
   canEdit: boolean
+  searchQuery?: string
   onOpen: (issue: ProjectIssue) => void
   onEdit: (issue: ProjectIssue) => void
 }) {
@@ -847,7 +1064,9 @@ function IssueTimeline({
           return (
             <div key={issue.id} className="itl-row" onClick={() => onOpen(issue)} style={{ cursor: 'pointer' }}>
               <div className="itl-row-label">
-                <span className="itl-row-title">{issue.title}</span>
+                <span className="itl-row-title">
+                  {searchQuery ? <Highlight text={issue.title} query={searchQuery} /> : issue.title}
+                </span>
                 {isHigh && <span className="chip chip-on_hold" style={{ fontSize: 9, padding: '1px 5px' }}>중요</span>}
               </div>
               <div className="itl-row-track">

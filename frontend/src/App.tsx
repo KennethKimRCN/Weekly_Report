@@ -10,6 +10,7 @@ import Projects      from './pages/Projects'
 import ProjectRecord from './pages/ProjectRecord'
 import Analytics     from './pages/Analytics'
 import Members       from './pages/Members'
+import MyProjects    from './pages/MyProjects'
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
             <Route path="/projects/:projectId"     element={<ProjectRecord />} />
             <Route path="/analytics"               element={<Analytics />} />
             <Route path="/members"                 element={<Members />} />
+            <Route path="/my-projects"             element={<MyProjects />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

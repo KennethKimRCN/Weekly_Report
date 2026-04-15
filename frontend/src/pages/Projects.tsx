@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { projectsApi } from '../api'
 import { useAuthStore, useAppStore } from '../store'
@@ -14,6 +14,20 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
   cancelled: '취소',
 }
 
+/** Highlight matching substrings in a string, returning spans */
+function Highlight({ text, query }: { text: string; query: string }) {
+  if (!query || !text) return <>{text}</>
+  const idx = text.toLowerCase().indexOf(query.toLowerCase())
+  if (idx === -1) return <>{text}</>
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="search-highlight">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  )
+}
+
 export default function Projects() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
@@ -23,7 +37,9 @@ export default function Projects() {
   const [importing, setImporting] = useState(false)
   const [filterQ, setFilterQ] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [filterAssignee, setFilterAssignee] = useState('')
   const [assigneeSearch, setAssigneeSearch] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
   const { user } = useAuthStore()
   const { lookups } = useAppStore()
   const { toast } = useToast()
@@ -35,15 +51,41 @@ export default function Projects() {
     setLoading(false)
   }
 
-  useEffect(() => {
-    load()
-  }, [])
+  useEffect(() => { load() }, [])
 
-  const filtered = projects.filter((project) => {
-    const matchQ = !filterQ || project.project_name.toLowerCase().includes(filterQ.toLowerCase())
-    const matchStatus = !filterStatus || project.status === filterStatus
-    return matchQ && matchStatus
-  })
+  // Collect all unique assignees from loaded projects for the filter dropdown
+  const allAssigneesInProjects = useMemo(() => {
+    const map = new Map<number, string>()
+    projects.forEach((p) => p.assignees.forEach((a) => map.set(a.id, a.name)))
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
+  }, [projects])
+
+  const q = filterQ.trim().toLowerCase()
+
+  const filtered = useMemo(() => projects.filter((project) => {
+    if (filterStatus && project.status !== filterStatus) return false
+    if (filterAssignee && !project.assignees.some((a) => String(a.id) === filterAssignee)) return false
+    if (!q) return true
+    return (
+      project.project_name.toLowerCase().includes(q) ||
+      (project.company ?? '').toLowerCase().includes(q) ||
+      (project.location ?? '').toLowerCase().includes(q) ||
+      (project.wbs_number ?? '').toLowerCase().includes(q) ||
+      (project.solution_product ?? '').toLowerCase().includes(q) ||
+      project.assignees.some((a) => a.name.toLowerCase().includes(q))
+    )
+  }), [projects, q, filterStatus, filterAssignee])
+
+  const activeFilters = [
+    filterStatus ? { key: 'status', label: STATUS_LABELS[filterStatus as ProjectStatus] ?? filterStatus, clear: () => setFilterStatus('') } : null,
+    filterAssignee ? { key: 'assignee', label: allAssigneesInProjects.find((a) => String(a.id) === filterAssignee)?.name ?? '', clear: () => setFilterAssignee('') } : null,
+  ].filter(Boolean) as { key: string; label: string; clear: () => void }[]
+
+  function clearAll() {
+    setFilterQ('')
+    setFilterStatus('')
+    setFilterAssignee('')
+  }
 
   async function save() {
     if (!editing) return
@@ -166,27 +208,92 @@ export default function Projects() {
         )}
       </div>
 
-      <div className="filter-bar">
-        <div className="filter-search">
-          <div className="filter-search-icon">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+      <div className="search-bar-wrap">
+        <div className="search-bar-row">
+          {/* Main search input */}
+          <div className="search-main">
+            <svg className="search-main-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
+            <input
+              ref={searchRef}
+              value={filterQ}
+              onChange={(e) => setFilterQ(e.target.value)}
+              placeholder="프로젝트명, 회사, 위치, WBS, 담당자 검색..."
+              aria-label="통합 검색"
+              className="search-main-input"
+            />
+            {filterQ && (
+              <button className="search-clear-btn" onClick={() => { setFilterQ(''); searchRef.current?.focus() }} aria-label="검색어 지우기">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                  <line x1="4" y1="4" x2="12" y2="12" /><line x1="12" y1="4" x2="4" y2="12" />
+                </svg>
+              </button>
+            )}
           </div>
-          <input
-            value={filterQ}
-            onChange={(e) => setFilterQ(e.target.value)}
-            placeholder="프로젝트명 검색..."
-            aria-label="프로젝트명 검색"
-          />
+
+          {/* Status filter */}
+          <div className="search-filter-select-wrap">
+            <svg className="search-filter-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <circle cx="8" cy="8" r="2.5" /><circle cx="8" cy="8" r="6" strokeDasharray="2 2.5" />
+            </svg>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              aria-label="상태 필터"
+              className={`search-filter-select ${filterStatus ? 'is-active' : ''}`}
+            >
+              <option value="">전체 상태</option>
+              {Object.entries(STATUS_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Assignee filter */}
+          <div className="search-filter-select-wrap">
+            <svg className="search-filter-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <circle cx="8" cy="5.5" r="2.5" /><path d="M2 13c0-3 2.7-5 6-5s6 2 6 5" />
+            </svg>
+            <select
+              value={filterAssignee}
+              onChange={(e) => setFilterAssignee(e.target.value)}
+              aria-label="담당자 필터"
+              className={`search-filter-select ${filterAssignee ? 'is-active' : ''}`}
+            >
+              <option value="">전체 담당자</option>
+              {allAssigneesInProjects.map((a) => (
+                <option key={a.id} value={String(a.id)}>{a.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
-        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} aria-label="상태 필터">
-          <option value="">전체 상태</option>
-          {Object.entries(STATUS_LABELS).map(([key, label]) => (
-            <option key={key} value={key}>{label}</option>
-          ))}
-        </select>
+
+        {/* Active filter chips + result count */}
+        {(activeFilters.length > 0 || filterQ || projects.length > 0) && (
+          <div className="search-meta-row">
+            <span className="search-result-count">
+              {filtered.length === projects.length
+                ? `전체 ${projects.length}개 프로젝트`
+                : <><strong>{filtered.length}</strong>개 검색됨 / 전체 {projects.length}개</>}
+            </span>
+            <div className="search-chip-row">
+              {activeFilters.map((f) => (
+                <span key={f.key} className="search-filter-chip">
+                  {f.label}
+                  <button onClick={f.clear} aria-label={`${f.label} 필터 제거`}>
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                      <line x1="2" y1="2" x2="10" y2="10" /><line x1="10" y1="2" x2="2" y2="10" />
+                    </svg>
+                  </button>
+                </span>
+              ))}
+              {(activeFilters.length > 0 || filterQ) && (
+                <button className="search-clear-all" onClick={clearAll}>모두 초기화</button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="card" style={{ padding: 0 }}>
@@ -231,14 +338,18 @@ export default function Projects() {
                   tabIndex={0}
                   onKeyDown={(e) => e.key === 'Enter' && navigate(`/projects/${project.id}`)}
                 >
-                  <td className="fw-500" style={{ color: 'var(--blue)' }}>{project.project_name}</td>
-                  <td className="text-muted text-sm">{project.wbs_number ?? '-'}</td>
-                  <td>{project.company}</td>
-                  <td>{project.location}</td>
+                  <td className="fw-500" style={{ color: 'var(--blue)' }}><Highlight text={project.project_name} query={filterQ} /></td>
+                  <td className="text-muted text-sm"><Highlight text={project.wbs_number ?? '-'} query={filterQ} /></td>
+                  <td><Highlight text={project.company} query={filterQ} /></td>
+                  <td><Highlight text={project.location} query={filterQ} /></td>
                   <td><ProjectStatusChip status={project.status} /></td>
                   <td>
                     {project.assignees.length > 0
-                      ? project.assignees.map((assignee) => <span key={assignee.id} className="assignee-chip">{assignee.name}</span>)
+                      ? project.assignees.map((assignee) => (
+                          <span key={assignee.id} className="assignee-chip">
+                            <Highlight text={assignee.name} query={filterQ} />
+                          </span>
+                        ))
                       : <span className="text-muted text-sm">-</span>}
                   </td>
                   <td className="text-sm text-muted col-date">
