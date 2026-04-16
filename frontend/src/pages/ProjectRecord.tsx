@@ -1,4 +1,5 @@
 ﻿import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import { projectRecordApi, type Milestone, type ProjectIssue } from '../api'
 import type { ProjectRecord as PR } from '../api'
@@ -43,6 +44,10 @@ export default function ProjectRecord() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'issues' | 'milestones'>('issues')
   const [issueView, setIssueView] = useState<'kanban' | 'timeline'>('kanban')
+  const [issueSearch, setIssueSearch] = useState('')
+  const [issueDateFrom, setIssueDateFrom] = useState('')
+  const [issueDateTo, setIssueDateTo] = useState('')
+  const [issueThisWeek, setIssueThisWeek] = useState(false)
 
   const [msModal, setMsModal] = useState<Partial<Milestone> | null>(null)
   const [issueModal, setIssueModal] = useState<Partial<ProjectIssue> | null>(null)
@@ -83,9 +88,38 @@ export default function ProjectRecord() {
 
   const canEdit = user?.is_admin === 1 || record.assignees.some((assignee) => assignee.id === user?.id)
   const openIssues = record.issues.filter((issue) => !['완료', '취소'].includes(issue.status))
+  const thisWeekRange = getThisWeekRange()
+  const effectiveIssueDateFrom = issueThisWeek ? thisWeekRange.from : issueDateFrom
+  const effectiveIssueDateTo = issueThisWeek ? thisWeekRange.to : issueDateTo
+  const issueQuery = issueSearch.trim().toLowerCase()
+  const hasIssueFilters = Boolean(issueQuery || effectiveIssueDateFrom || effectiveIssueDateTo)
+
+  const filteredIssueEntries = record.issues
+    .map((issue) => {
+      const issueMatchesQuery = !issueQuery || matchesIssueQuery(issue, issueQuery)
+      const issueMatchesDate = !effectiveIssueDateFrom && !effectiveIssueDateTo
+        ? true
+        : doesRangeOverlap(issue.start_date, issue.end_date, effectiveIssueDateFrom, effectiveIssueDateTo)
+
+      const matchedProgresses = issue.progresses.filter((progress) => {
+        const queryMatch = !issueQuery || matchesProgressQuery(progress, issueQuery)
+        const dateMatch = !effectiveIssueDateFrom && !effectiveIssueDateTo
+          ? true
+          : doesRangeOverlap(progress.start_date, progress.end_date, effectiveIssueDateFrom, effectiveIssueDateTo)
+        return queryMatch && dateMatch
+      })
+
+      return {
+        issue,
+        matchedProgresses,
+        isMatch: !hasIssueFilters || (issueMatchesQuery && issueMatchesDate) || matchedProgresses.length > 0,
+      }
+    })
+    .filter((entry) => entry.isMatch)
+
   const issueColumns = ISSUE_STATUS_OPTIONS.map((status) => ({
     status,
-    issues: record.issues.filter((issue) => issue.status === status),
+    issues: filteredIssueEntries.filter((entry) => entry.issue.status === status),
   }))
 
   async function saveMilestone() {
@@ -270,6 +304,80 @@ export default function ProjectRecord() {
           </div>
 
           <div className="panel-body">
+            <div className="issue-search-bar">
+              <div className="issue-search-row">
+                <div className="issue-search-input-wrap">
+                  <span className="issue-search-icon" aria-hidden="true">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                  </span>
+                  <input
+                    className="issue-search-input"
+                    value={issueSearch}
+                    onChange={(e) => setIssueSearch(e.target.value)}
+                    placeholder="이슈 제목, 내용, 진행내역까지 검색"
+                  />
+                  {issueSearch && (
+                    <button className="issue-search-clear" onClick={() => setIssueSearch('')} aria-label="검색어 지우기">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+
+                <div className="issue-search-range">
+                  <input
+                    className="issue-date-input"
+                    type="date"
+                    value={issueDateFrom}
+                    onChange={(e) => { setIssueThisWeek(false); setIssueDateFrom(e.target.value) }}
+                  />
+                  <span className="issue-range-sep">~</span>
+                  <input
+                    className="issue-date-input"
+                    type="date"
+                    value={issueDateTo}
+                    onChange={(e) => { setIssueThisWeek(false); setIssueDateTo(e.target.value) }}
+                  />
+                  <button
+                    className={`btn btn-ghost btn-sm ${issueThisWeek ? 'issue-filter-week-active' : ''}`}
+                    onClick={() => setIssueThisWeek((value) => !value)}
+                  >
+                    이번 주
+                  </button>
+                  {(hasIssueFilters || issueThisWeek) && (
+                    <button
+                      className="issue-search-reset"
+                      onClick={() => {
+                        setIssueSearch('')
+                        setIssueDateFrom('')
+                        setIssueDateTo('')
+                        setIssueThisWeek(false)
+                      }}
+                    >
+                      초기화
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="issue-search-summary">
+                <span>결과 <strong>{filteredIssueEntries.length}</strong>건</span>
+                {issueQuery && <span className="iss-mode-badge">검색어 적용</span>}
+                {issueThisWeek && (
+                  <span className="iss-range-chip">이번 주 {effectiveIssueDateFrom} ~ {effectiveIssueDateTo}</span>
+                )}
+                {!issueThisWeek && (effectiveIssueDateFrom || effectiveIssueDateTo) && (
+                  <span className="iss-range-chip">
+                    날짜 {effectiveIssueDateFrom || '시작'} ~ {effectiveIssueDateTo || '종료'}
+                  </span>
+                )}
+                <span>이슈 항목과 진행내역 둘 다 검색/필터링됩니다.</span>
+              </div>
+            </div>
+
             {issueView === 'kanban' ? (
               <div className="kanban-board">
                 {issueColumns.map((column) => (
@@ -290,10 +398,12 @@ export default function ProjectRecord() {
                     <div className="kanban-column-body">
                       {column.issues.length === 0 ? (
                         <div className="kanban-empty">이 상태의 이슈가 없습니다.</div>
-                      ) : column.issues.map((issue) => (
+                      ) : column.issues.map(({ issue, matchedProgresses }) => (
                         <IssueCard
                           key={issue.id}
                           issue={issue}
+                          matchedProgresses={matchedProgresses}
+                          searchActive={hasIssueFilters}
                           canEdit={canEdit}
                           closed={column.status === '완료' || column.status === '취소'}
                           onOpen={() => setDetailIssue(issue)}
@@ -307,7 +417,7 @@ export default function ProjectRecord() {
               </div>
             ) : (
               <IssueTimeline
-                issues={record.issues}
+                issues={filteredIssueEntries.map((entry) => entry.issue)}
                 today={today}
                 canEdit={canEdit}
                 onOpen={(issue) => setDetailIssue(issue)}
@@ -551,8 +661,58 @@ export default function ProjectRecord() {
   )
 }
 
+function matchesIssueQuery(issue: ProjectIssue, query: string) {
+  return [
+    issue.title,
+    issue.details ?? '',
+    issue.status,
+    issue.priority ?? '',
+    issue.start_date,
+    issue.end_date ?? '',
+  ].join(' ').toLowerCase().includes(query)
+}
+
+function matchesProgressQuery(progress: ProjectIssue['progresses'][number], query: string) {
+  return [
+    progress.title,
+    progress.details ?? '',
+    progress.author_name ?? '',
+    progress.start_date,
+    progress.end_date ?? '',
+  ].join(' ').toLowerCase().includes(query)
+}
+
+function doesRangeOverlap(start: string, end: string | null | undefined, from: string, to: string) {
+  const rangeStart = from ? new Date(from) : null
+  const rangeEnd = to ? new Date(to) : null
+  const itemStart = new Date(start)
+  const itemEnd = new Date(end ?? start)
+
+  if (rangeStart && itemEnd < rangeStart) return false
+  if (rangeEnd && itemStart > rangeEnd) return false
+  return true
+}
+
+function getThisWeekRange() {
+  const now = new Date()
+  const day = now.getDay()
+  const diffToMonday = day === 0 ? -6 : 1 - day
+  const start = new Date(now)
+  start.setDate(now.getDate() + diffToMonday)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  end.setHours(23, 59, 59, 999)
+  return {
+    from: start.toISOString().slice(0, 10),
+    to: end.toISOString().slice(0, 10),
+  }
+}
+
 function IssueCard({
   issue,
+  matchedProgresses,
+  searchActive,
   canEdit,
   closed = false,
   onOpen,
@@ -560,6 +720,8 @@ function IssueCard({
   onDelete,
 }: {
   issue: ProjectIssue
+  matchedProgresses?: ProjectIssue['progresses']
+  searchActive?: boolean
   canEdit: boolean
   closed?: boolean
   onOpen: () => void
@@ -569,6 +731,7 @@ function IssueCard({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const priority = PRIORITY_OPTIONS.find((option) => option.value === issue.priority) ?? PRIORITY_OPTIONS[0]
   const statusChip = issue.status === '완료' ? 'chip-approved' : issue.status === '취소' ? 'chip-cancelled' : issue.status === '진행중' ? 'chip-submitted' : 'chip-draft'
+  const visibleProgresses = matchedProgresses ?? []
 
   return (
     <div
@@ -612,7 +775,18 @@ function IssueCard({
         )}
       </div>
 
-      {issue.progresses.length > 0 && (
+      {searchActive && visibleProgresses.length > 0 ? (
+        <div className="issue-card-prog-snippets">
+          {visibleProgresses.slice(0, 2).map((progress) => (
+            <div key={progress.id} className="issue-card-prog-snippet">
+              <span className="icps-date">{progress.start_date}{progress.end_date && progress.end_date !== progress.start_date ? ` ~ ${progress.end_date}` : ''}</span>
+              <span className="icps-title">{progress.title}</span>
+              {progress.details && <span className="icps-details">{progress.details}</span>}
+            </div>
+          ))}
+          {visibleProgresses.length > 2 && <div className="icps-more">외 {visibleProgresses.length - 2}건 더 보기</div>}
+        </div>
+      ) : issue.progresses.length > 0 && (
         <div className="issue-card-progress-hint">
           <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
             <circle cx="8" cy="8" r="6" /><line x1="8" y1="5" x2="8" y2="8" /><line x1="8" y1="8" x2="10" y2="10" />
@@ -668,7 +842,7 @@ function IssueDetailModal({
 
   const isOverdue = !isClosed && issue.end_date && issue.end_date < today
 
-  return (
+  return createPortal(
     <div className="issue-detail-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="issue-detail-panel">
         {/* ── Header ─────────────────────────────────────────────── */}
@@ -831,7 +1005,7 @@ function IssueDetailModal({
         </div>
       </div>
     </div>
-  )
+  , document.body)
 }
 
 function IssueTimeline({
