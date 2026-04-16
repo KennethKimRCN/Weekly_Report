@@ -2,62 +2,75 @@
    tokens.css — Design tokens, base reset & typography
    ═══════════════════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Google+Sans:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* ── Tokens ──────────────────────────────────────────────────────────────── */
 :root {
   /* Brand */
-  --blue:        #1a73e8;
-  --blue-dark:   #1557b0;
-  --blue-light:  #e8f0fe;
-  --blue-mid:    #c5d8fb;
+  --blue:        #0054a6;
+  --blue-dark:   #003d78;
+  --blue-light:  #e8f1fb;
+  --blue-mid:    #8eb4da;
+  --yellow:      #ffd100;
+  --yellow-bg:   #fff6bf;
+  --navy-900:    #042f5f;
+  --navy-800:    #0b3f79;
+  --navy-700:    #0f4b90;
 
   /* Semantic */
-  --green:       #1e8e3e;
-  --green-bg:    #e6f4ea;
-  --red:         #d93025;
-  --red-bg:      #fce8e6;
-  --amber:       #f9ab00;
-  --amber-bg:    #fef7e0;
+  --green:       #177245;
+  --green-bg:    #e7f5ee;
+  --red:         #c53b32;
+  --red-bg:      #fdecea;
+  --amber:       #d6a100;
+  --amber-bg:    #fff7d1;
 
   /* Neutrals */
-  --ink:         #202124;
-  --ink-2:       #3c4043;
-  --ink-3:       #5f6368;
-  --ink-4:       #80868b;
-  --ink-5:       #bdc1c6;
+  --ink:         #0f172a;
+  --ink-2:       #1e293b;
+  --ink-3:       #475569;
+  --ink-4:       #64748b;
+  --ink-5:       #94a3b8;
   --surface:     #ffffff;
-  --surface-2:   #f8f9fa;
-  --surface-3:   #f1f3f4;
-  --border:      #dadce0;
-  --border-2:    #e8eaed;
+  --surface-2:   #f8fafc;
+  --surface-3:   #f1f5f9;
+  --surface-4:   #e2e8f0;
+  --border:      #e2e8f0;
+  --border-2:    #edf2f7;
 
   /* Shadows */
-  --shadow-1:    0 1px 2px rgba(60,64,67,.15), 0 1px 3px rgba(60,64,67,.1);
-  --shadow-2:    0 2px 6px rgba(60,64,67,.15), 0 1px 3px rgba(60,64,67,.1);
-  --shadow-3:    0 4px 16px rgba(60,64,67,.12);
+  --shadow-1:    0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-2:    0 10px 24px rgba(15, 23, 42, 0.08);
+  --shadow-3:    0 18px 40px rgba(15, 23, 42, 0.12);
 
   /* Layout */
-  --sidebar-w:   240px;
-  --sidebar-collapsed: 64px;
-  --topbar-h:    64px;
-  --radius:      12px;
-  --radius-sm:   8px;
-  --radius-xs:   6px;
+  --sidebar-w:   272px;
+  --sidebar-collapsed: 76px;
+  --topbar-h:    72px;
+  --radius:      4px;
+  --radius-sm:   4px;
+  --radius-xs:   4px;
   --radius-pill: 999px;
+  --content-max: 1600px;
 }
 
 /* ── Base ────────────────────────────────────────────────────────────────── */
 html { font-size: 14px; }
 
 body {
-  font-family: 'Noto Sans KR', 'Google Sans', system-ui, sans-serif;
+  font-family: 'Inter', 'Noto Sans KR', system-ui, sans-serif;
   background: var(--surface-2);
   color: var(--ink);
-  line-height: 1.6;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  background-image:
+    linear-gradient(180deg, rgba(0, 84, 166, 0.04), rgba(248, 250, 252, 0) 220px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+    linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+  background-size: auto, 24px 24px, 24px 24px;
+  background-position: 0 0, 0 0, 0 0;
 }
 
 a { text-decoration: none; color: inherit; }

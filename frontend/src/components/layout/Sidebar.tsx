@@ -66,7 +66,10 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           >
             <MenuIcon />
           </button>
-          <span className="sidebar-logo">WeeklyReport</span>
+          <div className="sidebar-brand">
+            <span className="sidebar-eyebrow">DI 실행 부서</span>
+            <span className="sidebar-logo">WeeklyReport</span>
+          </div>
         </div>
 
         <nav className="sidebar-nav" aria-label="주요 메뉴">
@@ -152,11 +155,12 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
         </nav>
 
         <div className="sidebar-footer">
-          <div className={`avatar avatar-sm ${colorClass}`}>{initials}</div>
+          <div className={`avatar avatar-sm sidebar-avatar ${colorClass}`}>{initials}</div>
           <div className="sidebar-user-info">
             <div className="sidebar-user-name">{user?.name}</div>
             <div className="sidebar-user-rank">{user?.rank_name}</div>
           </div>
+          {sidebarOpen && <span className="sidebar-status">Online</span>}
         </div>
       </div>
     </>
