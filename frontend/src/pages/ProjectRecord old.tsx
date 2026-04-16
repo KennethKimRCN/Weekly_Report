@@ -653,31 +653,15 @@ function IssueDetailModal({
   const statusChip = ISSUE_STATUS_META[issue.status]?.chip ?? 'chip-draft'
   const isClosed = issue.status === '완료' || issue.status === '취소'
 
-  // Sort progresses newest-first
-  const sortedProgresses = [...issue.progresses].sort((a, b) => b.start_date.localeCompare(a.start_date))
-
-  // Duration helper
-  function daysBetween(a: string, b: string) {
-    const diff = (new Date(b).getTime() - new Date(a).getTime()) / 86400000
-    return Math.round(diff)
-  }
-
-  const durationLabel = issue.end_date
-    ? `${daysBetween(issue.start_date, issue.end_date)}일`
-    : '종료일 미정'
-
-  const isOverdue = !isClosed && issue.end_date && issue.end_date < today
-
   return (
     <div className="issue-detail-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="issue-detail-panel">
-        {/* ── Header ─────────────────────────────────────────────── */}
+        {/* Header */}
         <div className="issue-detail-header">
           <div className="issue-detail-header-top">
             <div className="issue-detail-badges">
               <span className={`chip ${statusChip}`}>{issue.status}</span>
               <span className={`chip ${priority.chip}`}>{priority.label}</span>
-              {isOverdue && <span className="chip chip-risk" style={{ fontSize: 10 }}>기한 초과</span>}
             </div>
             <button className="issue-detail-close" onClick={onClose} aria-label="닫기">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
@@ -685,43 +669,26 @@ function IssueDetailModal({
               </svg>
             </button>
           </div>
-
           <h2 className="issue-detail-title">{issue.title}</h2>
-
-          {/* Meta grid — consistent icon+label style */}
           <div className="issue-detail-meta">
             <span className="issue-detail-meta-item">
-              {/* calendar icon */}
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <rect x="2" y="3" width="12" height="11" rx="2" />
-                <line x1="5" y1="1" x2="5" y2="5" /><line x1="11" y1="1" x2="11" y2="5" /><line x1="2" y1="7" x2="14" y2="7" />
+                <rect x="2" y="3" width="12" height="11" rx="2" /><line x1="5" y1="1" x2="5" y2="5" /><line x1="11" y1="1" x2="11" y2="5" /><line x1="2" y1="7" x2="14" y2="7" />
               </svg>
-              {issue.start_date}
-              {issue.end_date ? ` ~ ${issue.end_date}` : ''}
-            </span>
-            <span className="issue-detail-meta-item" style={{ color: isOverdue ? 'var(--red)' : undefined }}>
-              {/* clock icon */}
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <circle cx="8" cy="8" r="6" />
-                <line x1="8" y1="5" x2="8" y2="8" /><line x1="8" y1="8" x2="10.5" y2="10" />
-              </svg>
-              {durationLabel}
+              {issue.start_date}{issue.end_date ? ` ~ ${issue.end_date}` : ''}
             </span>
             {issue.progresses.length > 0 && (
-              <span className="issue-detail-meta-item" style={{ color: 'var(--blue)' }}>
-                {/* activity icon */}
+              <span className="issue-detail-meta-item">
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <polyline points="1 8 4 5 7 9 10 4 13 7 15 5" />
+                  <circle cx="8" cy="8" r="6" /><line x1="8" y1="5" x2="8" y2="8" /><line x1="8" y1="8" x2="10" y2="10" />
                 </svg>
-                진행내역 {issue.progresses.length}건
+                진행내역 {issue.progresses.length}개
               </span>
             )}
           </div>
-
           {issue.details && (
             <p className="issue-detail-description">{issue.details}</p>
           )}
-
           {canEdit && (
             <div className="issue-detail-actions">
               <button className="btn btn-primary btn-sm" onClick={onEdit}>
@@ -743,25 +710,20 @@ function IssueDetailModal({
           )}
         </div>
 
-        {/* ── Progress timeline body ─────────────────────────────── */}
+        {/* Progress section */}
         <div className="issue-detail-body">
           <div className="issue-detail-section-header">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ color: 'var(--blue)', flexShrink: 0 }}>
-              <polyline points="1 8 4 5 7 9 10 4 13 7 15 5" />
-            </svg>
             <span className="issue-detail-section-title">진행내역</span>
-            {issue.progresses.length > 0 && (
-              <span className="chip chip-submitted" style={{ fontSize: 11 }}>{issue.progresses.length}</span>
-            )}
+            <span className="chip chip-draft" style={{ fontSize: 11 }}>{issue.progresses.length}</span>
             {canEdit && (
               <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={onAddProgress}>+ 추가</button>
             )}
           </div>
 
-          {sortedProgresses.length === 0 ? (
+          {issue.progresses.length === 0 ? (
             <div className="issue-detail-empty">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" style={{ color: 'var(--ink-5)', marginBottom: 8 }}>
-                <polyline points="2 15 7 10 11 14 17 8 22 13" /><line x1="2" y1="20" x2="22" y2="20" />
+                <circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12" /><circle cx="12" cy="16" r="0.5" fill="currentColor" />
               </svg>
               <span>아직 진행내역이 없습니다.</span>
               {canEdit && (
@@ -770,62 +732,30 @@ function IssueDetailModal({
             </div>
           ) : (
             <div className="issue-detail-progress-list">
-              {sortedProgresses.map((progress, idx) => {
-                const isLatest = idx === 0
-                return (
-                  <div key={progress.id} className="issue-detail-progress-item">
-                    {/* Spine dot — filled blue for latest, outlined for older */}
-                    <div className="idp-spine-dot" style={
-                      isLatest
-                        ? { background: 'var(--blue)', borderColor: 'var(--blue)', boxShadow: '0 0 0 3px var(--blue-light)' }
-                        : {}
-                    }>
-                      {isLatest && (
-                        <svg width="7" height="7" viewBox="0 0 8 8" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round">
-                          <polyline points="1 4 3 6 7 2" />
-                        </svg>
-                      )}
-                    </div>
-                    <div className="idp-content">
-                      <div className="idp-top">
-                        <div className="idp-date">
-                          {progress.start_date}
-                          {progress.end_date && progress.end_date !== progress.start_date
-                            ? ` ~ ${progress.end_date}`
-                            : ''}
-                          {isLatest && (
-                            <span style={{
-                              marginLeft: 6,
-                              fontSize: 10,
-                              fontWeight: 600,
-                              padding: '1px 6px',
-                              borderRadius: 20,
-                              background: 'var(--blue-light)',
-                              color: 'var(--blue)',
-                            }}>최신</span>
-                          )}
-                        </div>
-                        {canEdit && (
-                          <div className="idp-btns">
-                            <button className="btn btn-ghost btn-sm" style={{ padding: '2px 8px' }} onClick={() => onEditProgress(progress)}>편집</button>
-                            <button className="btn btn-ghost btn-sm" style={{ padding: '2px 8px', color: 'var(--red)' }} onClick={() => onDeleteProgress(progress.id)}>삭제</button>
-                          </div>
-                        )}
+              {[...issue.progresses]
+                .sort((a, b) => b.start_date.localeCompare(a.start_date))
+                .map((progress, idx) => (
+                <div key={progress.id} className="issue-detail-progress-item">
+                  <div className="idp-spine-dot" />
+                  <div className="idp-content">
+                    <div className="idp-top">
+                      <div className="idp-date">
+                        {progress.start_date}
+                        {progress.end_date && progress.end_date !== progress.start_date ? ` ~ ${progress.end_date}` : ''}
                       </div>
-                      <div className="idp-title">{progress.title}</div>
-                      {progress.details && <div className="idp-details">{progress.details}</div>}
-                      {progress.author_name && (
-                        <div className="idp-author">
-                          <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ marginRight: 3, verticalAlign: 'middle' }}>
-                            <circle cx="8" cy="5" r="3" /><path d="M2 13c0-3 2.7-5 6-5s6 2 6 5" />
-                          </svg>
-                          {progress.author_name}
+                      {canEdit && (
+                        <div className="idp-btns">
+                          <button className="btn btn-ghost btn-sm" style={{ padding: '2px 8px' }} onClick={() => onEditProgress(progress)}>편집</button>
+                          <button className="btn btn-ghost btn-sm" style={{ padding: '2px 8px', color: 'var(--red)' }} onClick={() => onDeleteProgress(progress.id)}>삭제</button>
                         </div>
                       )}
                     </div>
+                    <div className="idp-title">{progress.title}</div>
+                    {progress.details && <div className="idp-details">{progress.details}</div>}
+                    {progress.author_name && <div className="idp-author">{progress.author_name}</div>}
                   </div>
-                )
-              })}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -833,7 +763,6 @@ function IssueDetailModal({
     </div>
   )
 }
-
 function IssueTimeline({
   issues,
   today,
@@ -847,31 +776,20 @@ function IssueTimeline({
   onOpen: (issue: ProjectIssue) => void
   onEdit: (issue: ProjectIssue) => void
 }) {
-  // Group issues by status order for visual grouping
-  const sorted = [...issues].sort((a, b) => {
-    const order: Record<string, number> = { 진행중: 0, 초안: 1, 완료: 2, 취소: 3 }
-    const oA = order[a.status] ?? 9
-    const oB = order[b.status] ?? 9
-    if (oA !== oB) return oA - oB
-    return a.start_date.localeCompare(b.start_date)
-  })
+  const sorted = [...issues].sort((a, b) => a.start_date.localeCompare(b.start_date))
 
   if (sorted.length === 0) {
     return <div className="kanban-empty" style={{ minHeight: 120 }}>등록된 이슈가 없습니다.</div>
   }
 
-  // Determine date range — include progress dates too
-  const allDates = sorted.flatMap(i => [
-    i.start_date,
-    i.end_date ?? i.start_date,
-    ...i.progresses.flatMap(p => [p.start_date, p.end_date ?? p.start_date]),
-  ])
+  // Determine date range
+  const allDates = sorted.flatMap(i => [i.start_date, i.end_date ?? i.start_date])
   const minDate = new Date(allDates.reduce((a, b) => a < b ? a : b))
   const maxDate = new Date(allDates.reduce((a, b) => a > b ? a : b))
 
-  // Padding
-  minDate.setDate(minDate.getDate() - 5)
-  maxDate.setDate(maxDate.getDate() + 5)
+  // Expand range by a bit for padding
+  minDate.setDate(minDate.getDate() - 3)
+  maxDate.setDate(maxDate.getDate() + 3)
 
   const totalDays = Math.max(1, (maxDate.getTime() - minDate.getTime()) / 86400000)
 
@@ -880,63 +798,21 @@ function IssueTimeline({
     return Math.max(0, Math.min(100, ((d.getTime() - minDate.getTime()) / 86400000 / totalDays) * 100))
   }
 
-  // Month + week ruler labels
+  // Month labels
   const months: { label: string; pct: number }[] = []
   const cur = new Date(minDate)
   cur.setDate(1)
   while (cur <= maxDate) {
     const p = pct(cur.toISOString().slice(0, 10))
-    months.push({
-      label: `${cur.getFullYear()}.${String(cur.getMonth() + 1).padStart(2, '0')}`,
-      pct: p,
-    })
+    months.push({ label: `${cur.getFullYear()}.${String(cur.getMonth() + 1).padStart(2, '0')}`, pct: p })
     cur.setMonth(cur.getMonth() + 1)
   }
 
   const todayPct = pct(today)
 
-  // Summary stats
-  const statusCounts: Record<string, number> = { 진행중: 0, 초안: 0, 완료: 0, 취소: 0 }
-  issues.forEach(i => { statusCounts[i.status] = (statusCounts[i.status] ?? 0) + 1 })
-  const totalProgresses = issues.reduce((sum, i) => sum + i.progresses.length, 0)
-
-  // Progress dot colors by recency (newest = solid blue, older = lighter)
-  function progressDotStyle(idx: number, total: number) {
-    if (total === 0) return {}
-    const alpha = 1 - (idx / total) * 0.6
-    return { opacity: alpha }
-  }
-
   return (
     <div className="issue-timeline">
-
-      {/* ── Summary strip ────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex', gap: 10, flexWrap: 'wrap',
-        marginBottom: 20, padding: '12px 16px',
-        background: 'var(--surface-2)', borderRadius: 10,
-        border: '1px solid var(--border-2)',
-      }}>
-        {([
-          { label: '진행중', chip: 'chip-submitted' },
-          { label: '초안',   chip: 'chip-draft' },
-          { label: '완료',   chip: 'chip-approved' },
-          { label: '취소',   chip: 'chip-cancelled' },
-        ] as const).map(({ label, chip }) => (
-          <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ink-3)' }}>
-            <span className={`chip ${chip}`} style={{ fontSize: 11 }}>{label}</span>
-            <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>{statusCounts[label] ?? 0}</strong>
-          </span>
-        ))}
-        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--ink-4)' }}>
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
-            <polyline points="1 8 4 5 7 9 10 4 13 7 15 5" />
-          </svg>
-          진행내역 총 {totalProgresses}건
-        </span>
-      </div>
-
-      {/* ── Ruler ────────────────────────────────────────────────── */}
+      {/* Header ruler */}
       <div className="itl-ruler">
         {months.map((m) => (
           <div key={m.label} className="itl-month-label" style={{ left: `${m.pct}%` }}>{m.label}</div>
@@ -948,242 +824,47 @@ function IssueTimeline({
         )}
       </div>
 
-      {/* ── Issue rows ───────────────────────────────────────────── */}
+      {/* Issue rows */}
       <div className="itl-rows">
         {sorted.map((issue) => {
-          const startPct  = pct(issue.start_date)
-          const endPct    = pct(issue.end_date ?? issue.start_date)
-          const widthPct  = Math.max(endPct - startPct, 1.5)
-          const isDone      = issue.status === '완료'
+          const startPct = pct(issue.start_date)
+          const endPct = pct(issue.end_date ?? issue.start_date)
+          const widthPct = Math.max(endPct - startPct, 1.5)
+          const isActive = issue.status === '진행중'
+          const isDone = issue.status === '완료'
           const isCancelled = issue.status === '취소'
-          const isActive    = issue.status === '진행중'
-          const isHigh      = issue.priority === 'high'
-          const isOverdue   = !isDone && !isCancelled && issue.end_date && issue.end_date < today
+          const isDraft = issue.status === '초안'
+          const isHigh = issue.priority === 'high'
 
-          const barClass = isDone      ? 'itl-bar-done'
-            : isCancelled ? 'itl-bar-cancelled'
-            : isActive    ? 'itl-bar-active'
+          const barClass = isDone
+            ? 'itl-bar-done'
+            : isCancelled
+            ? 'itl-bar-cancelled'
+            : isActive
+            ? 'itl-bar-active'
             : 'itl-bar-draft'
 
-          const statusChip  = ISSUE_STATUS_META[issue.status]?.chip ?? 'chip-draft'
-          const progSorted  = [...issue.progresses].sort((a, b) => b.start_date.localeCompare(a.start_date))
-
           return (
-            <div key={issue.id} style={{ marginBottom: issue.progresses.length > 0 ? 4 : 0 }}>
-              {/* ── Issue bar row ─────────────────────────────── */}
-              <div
-                className="itl-row"
-                style={{ cursor: 'pointer', minHeight: 44 }}
-                onClick={() => onOpen(issue)}
-              >
-                {/* Label column */}
-                <div className="itl-row-label" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%' }}>
-                    <span className="itl-row-title" style={{ fontWeight: isActive ? 600 : 500 }}>{issue.title}</span>
-                    {isHigh && (
-                      <span className="chip chip-on_hold" style={{ fontSize: 9, padding: '1px 5px', flexShrink: 0 }}>중요</span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span className={`chip ${statusChip}`} style={{ fontSize: 9, padding: '1px 6px' }}>{issue.status}</span>
-                    {issue.progresses.length > 0 && (
-                      <span style={{ fontSize: 10, color: 'var(--blue)', fontWeight: 500 }}>
-                        진행 {issue.progresses.length}
-                      </span>
-                    )}
-                    {isOverdue && (
-                      <span style={{ fontSize: 10, color: 'var(--red)', fontWeight: 500 }}>기한 초과</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Track */}
-                <div className="itl-row-track" style={{ height: 32 }}>
-                  {/* Today line extended into track */}
-                  {todayPct >= 0 && todayPct <= 100 && (
-                    <div style={{
-                      position: 'absolute', top: 0, bottom: 0,
-                      left: `${todayPct}%`, width: 1.5,
-                      background: 'var(--blue)', opacity: 0.25, pointerEvents: 'none',
-                    }} />
-                  )}
-                  {/* Issue bar */}
-                  <div
-                    className={`itl-bar ${barClass}`}
-                    style={{ left: `${startPct}%`, width: `${widthPct}%`, top: 6, height: 20 }}
-                    title={`${issue.start_date} ~ ${issue.end_date ?? '미정'} · ${issue.status}`}
-                  >
-                    <span className="itl-bar-label">{issue.title}</span>
-                  </div>
-                  {/* Progress dots on the track */}
-                  {progSorted.map((p, pi) => {
-                    const dp = pct(p.start_date)
-                    if (dp < 0 || dp > 100) return null
-                    return (
-                      <div
-                        key={p.id}
-                        title={`${p.start_date} · ${p.title}`}
-                        style={{
-                          position: 'absolute',
-                          left: `${dp}%`,
-                          top: '50%',
-                          transform: 'translate(-50%, -50%)',
-                          width: 8, height: 8,
-                          borderRadius: '50%',
-                          background: pi === 0 ? 'var(--blue)' : 'var(--blue-mid)',
-                          border: '1.5px solid white',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
-                          zIndex: 3,
-                          pointerEvents: 'none',
-                          opacity: progressDotStyle(pi, progSorted.length).opacity,
-                        }}
-                      />
-                    )
-                  })}
-                </div>
-
-                {canEdit && (
-                  <button
-                    className="btn btn-ghost btn-sm itl-edit-btn"
-                    style={{ padding: '2px 8px', flexShrink: 0 }}
-                    onClick={(e) => { e.stopPropagation(); onEdit(issue) }}
-                  >편집</button>
-                )}
+            <div key={issue.id} className="itl-row" onClick={() => onOpen(issue)} style={{ cursor: 'pointer' }}>
+              <div className="itl-row-label">
+                <span className="itl-row-title">{issue.title}</span>
+                {isHigh && <span className="chip chip-on_hold" style={{ fontSize: 9, padding: '1px 5px' }}>중요</span>}
               </div>
-
-              {/* ── Progress sub-rows (below issue bar) ──────── */}
-              {progSorted.length > 0 && (
-                <div style={{
-                  marginLeft: 200,
-                  marginRight: canEdit ? 60 : 8,
-                  marginBottom: 8,
-                  position: 'relative',
-                }}>
-                  {/* Left border accent */}
-                  <div style={{
-                    position: 'absolute', left: -12, top: 4, bottom: 4,
-                    width: 2, borderRadius: 2,
-                    background: 'linear-gradient(180deg, var(--blue-light), transparent)',
-                  }} />
-                  {progSorted.map((p, pi) => {
-                    const dp   = pct(p.start_date)
-                    const dep  = pct(p.end_date ?? p.start_date)
-                    const dw   = Math.max(dep - dp, 0.8)
-                    const isLatest = pi === 0
-                    return (
-                      <div
-                        key={p.id}
-                        style={{
-                          position: 'relative',
-                          height: 28,
-                          marginBottom: 3,
-                          borderRadius: 6,
-                          background: isLatest ? 'rgba(26,115,232,0.05)' : 'transparent',
-                        }}
-                      >
-                        {/* Date label on left of track */}
-                        <div style={{
-                          position: 'absolute',
-                          right: '100%',
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          paddingRight: 8,
-                          fontSize: 10,
-                          color: 'var(--ink-4)',
-                          whiteSpace: 'nowrap',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 3,
-                        }}>
-                          {isLatest && (
-                            <span style={{
-                              width: 5, height: 5, borderRadius: '50%',
-                              background: 'var(--blue)', flexShrink: 0,
-                            }} />
-                          )}
-                          {p.start_date}
-                        </div>
-
-                        {/* Track background */}
-                        <div style={{
-                          position: 'absolute', inset: 0,
-                          background: 'var(--surface-2)',
-                          borderRadius: 6, border: '1px solid var(--border-2)',
-                          overflow: 'hidden',
-                        }}>
-                          {/* Progress fill bar */}
-                          <div style={{
-                            position: 'absolute',
-                            left: `${dp}%`, width: `${dw}%`,
-                            top: 5, height: 14,
-                            background: isLatest
-                              ? 'linear-gradient(90deg, var(--blue-light), var(--blue-mid))'
-                              : 'var(--border-2)',
-                            borderRadius: 4,
-                            display: 'flex', alignItems: 'center',
-                            overflow: 'hidden',
-                          }}>
-                            <span style={{
-                              fontSize: 9, fontWeight: 600, paddingLeft: 5,
-                              color: isLatest ? 'var(--blue-dark)' : 'var(--ink-3)',
-                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                            }}>{p.title}</span>
-                          </div>
-                        </div>
-
-                        {/* Details tooltip area — title + author on hover */}
-                        <div style={{
-                          position: 'absolute', right: 8, top: '50%',
-                          transform: 'translateY(-50%)',
-                          display: 'flex', alignItems: 'center', gap: 4,
-                        }}>
-                          {p.author_name && (
-                            <span style={{ fontSize: 9, color: 'var(--ink-5)', whiteSpace: 'nowrap' }}>
-                              {p.author_name}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
+              <div className="itl-row-track">
+                <div
+                  className={`itl-bar ${barClass}`}
+                  style={{ left: `${startPct}%`, width: `${widthPct}%` }}
+                  title={`${issue.start_date} ~ ${issue.end_date ?? '미정'}`}
+                >
+                  <span className="itl-bar-label">{issue.title}</span>
                 </div>
+              </div>
+              {canEdit && (
+                <button className="btn btn-ghost btn-sm itl-edit-btn" style={{ padding: '2px 8px' }} onClick={(e) => { e.stopPropagation(); onEdit(issue) }}>편집</button>
               )}
             </div>
           )
         })}
-      </div>
-
-      {/* ── Legend ───────────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 16,
-        marginTop: 20, paddingTop: 14,
-        borderTop: '1px solid var(--border-2)',
-        fontSize: 11, color: 'var(--ink-4)', flexWrap: 'wrap',
-      }}>
-        <span style={{ fontWeight: 600, color: 'var(--ink-3)', marginRight: 4 }}>범례</span>
-        {[
-          { cls: 'itl-bar-active',    label: '진행중' },
-          { cls: 'itl-bar-draft',     label: '초안' },
-          { cls: 'itl-bar-done',      label: '완료' },
-          { cls: 'itl-bar-cancelled', label: '취소' },
-        ].map(({ cls, label }) => (
-          <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span className={`itl-bar ${cls}`} style={{ position: 'static', width: 22, height: 10, borderRadius: 3, flexShrink: 0, display: 'inline-flex' }} />
-            {label}
-          </span>
-        ))}
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--blue)', border: '1.5px solid white', boxShadow: '0 1px 3px rgba(0,0,0,.15)', display: 'inline-block' }} />
-          최신 진행내역
-        </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--blue-mid)', border: '1.5px solid white', display: 'inline-block' }} />
-          이전 진행내역
-        </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--blue)' }}>
-          <span style={{ width: 1.5, height: 14, background: 'var(--blue)', opacity: 0.5, display: 'inline-block' }} />
-          오늘
-        </span>
       </div>
     </div>
   )
