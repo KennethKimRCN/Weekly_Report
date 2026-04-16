@@ -137,24 +137,24 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
     try {
       const projectsRes = await projectsApi.list()
       const projectMap = new Map(projectsRes.data.map((project) => [project.id, project]))
-      const doc = buildWeeklyReportWordDocument({
+      const blob = await buildWeeklyReportWordDocument({
         report,
         groupedProjects,
         projectMap,
         ownerName: report.owner_name,
         ownerRank: user?.rank_name ?? '',
-      })
-      const blob = new Blob(['\ufeff', doc], { type: 'application/msword;charset=utf-8' })
+      }) as Blob
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = `weekly-report-week-${report.week_number}.doc`
+      anchor.download = `weekly-report-week-${report.week_number}.docx`
       document.body.appendChild(anchor)
       anchor.click()
       anchor.remove()
       URL.revokeObjectURL(url)
     } catch (e: any) {
-      toast(e.response?.data?.detail ?? 'Word 내보내기에 실패했습니다.', 'error')
+      console.error('Word export error:', e)
+      toast(e?.message ?? e.response?.data?.detail ?? 'Word 내보내기에 실패했습니다.', 'error')
     } finally {
       setExporting(false)
     }
@@ -688,7 +688,7 @@ function CommentsSection({ reportId, comments, onAdded }: { reportId: number; co
   )
 }
 
-function buildWeeklyReportWordDocument({
+async function buildWeeklyReportWordDocument({
   report,
   groupedProjects,
   projectMap,
@@ -700,140 +700,396 @@ function buildWeeklyReportWordDocument({
   projectMap: Map<number, Project>
   ownerName: string
   ownerRank: string
-}) {
-  const title = `[주간보고 Week-${report.week_number}: 주요 Issue]`
-  const projectSections = groupedProjects.map((group) => {
-    const groupAssignees = uniqueAssignees(
-      group.projects.flatMap((project) => projectMap.get(project.project_id)?.assignees ?? []),
-    )
+}): Promise<unknown> {
+  const {
+    Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+    AlignmentType, LevelFormat, HeadingLevel, BorderStyle, WidthType,
+    ShadingType, VerticalAlign, PageNumber, Header, Footer,
+  } = await import('docx')
 
-    const remarksHtml = group.projects
-      .map((project) => {
-        const remark = project.remarks?.trim()
-        if (!remark) return ''
-        return group.projects.length > 1
-          ? `<p><strong>${escapeHtml(project.project_name)}</strong>: ${escapeHtml(remark)}</p>`
-          : `<p>${escapeHtml(remark)}</p>`
+  // ── Colour palette ──────────────────────────────────────────────────
+  const BLUE       = '0054A6'
+  const BLUE_LIGHT = 'EBF2FA'
+  const DARK       = '0F172A'
+  const MID        = '334155'
+  const MUTED      = '64748B'
+  const BORDER_C   = 'CBD5E1'
+  const WHITE      = 'FFFFFF'
+  const HEADER_BG  = '1E3A5F'
+  const ROW_ALT    = 'F8FAFC'
+
+  // ── Border helpers ───────────────────────────────────────────────────
+  const thinBorder = { style: BorderStyle.SINGLE, size: 4, color: BORDER_C }
+  const cellBorders = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder }
+  const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
+  const noBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder }
+
+  // ── Text helpers ─────────────────────────────────────────────────────
+  const t = (text: string, opts: Record<string, unknown> = {}) =>
+    new TextRun({ text, font: 'Malgun Gothic', ...opts })
+
+  const emptyPara = (spacingAfter = 0) =>
+    new Paragraph({ children: [], spacing: { after: spacingAfter } })
+
+  // ── Section heading (A. / B.) ────────────────────────────────────────
+  const sectionHeading = (text: string) =>
+    new Paragraph({
+      children: [t(text, { bold: true, size: 26, color: WHITE })],
+      spacing: { before: 0, after: 0 },
+      shading: { fill: HEADER_BG, type: ShadingType.CLEAR },
+      indent: { left: 160 },
+    })
+
+  // ── Solution group title ─────────────────────────────────────────────
+  const groupTitle = (text: string) =>
+    new Paragraph({
+      children: [t(text, { bold: true, size: 22, color: BLUE })],
+      spacing: { before: 240, after: 80 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: BLUE, space: 4 } },
+    })
+
+  // ── Sub-label (1. 특이사항 etc.) ────────────────────────────────────
+  const subLabel = (text: string) =>
+    new Paragraph({
+      children: [t(text, { bold: true, size: 20, color: DARK })],
+      spacing: { before: 160, after: 80 },
+    })
+
+  // ── Project header bar ───────────────────────────────────────────────
+  const projectHeaderBar = (text: string) =>
+    new Paragraph({
+      children: [t(text, { bold: true, size: 18, color: DARK })],
+      spacing: { before: 120, after: 60 },
+      shading: { fill: BLUE_LIGHT, type: ShadingType.CLEAR },
+      indent: { left: 120, right: 120 },
+    })
+
+  // ── Body paragraph ───────────────────────────────────────────────────
+  const bodyPara = (text: string, opts: Record<string, unknown> = {}) =>
+    new Paragraph({
+      children: [t(text, { size: 18, color: MID, ...opts })],
+      spacing: { before: 40, after: 40 },
+    })
+
+  // ── Bullet item ──────────────────────────────────────────────────────
+  const bulletItem = (children: InstanceType<typeof TextRun>[]) =>
+    new Paragraph({
+      numbering: { reference: 'bullets', level: 0 },
+      children,
+      spacing: { before: 40, after: 40 },
+    })
+
+  // ── Schedule table ───────────────────────────────────────────────────
+  const scheduleTable = (items: ReportProject['project_schedules']) => {
+    const PAGE_W = 9360
+    const colW = [3600, 1500, 1500, 1400] as const // sums to 8000 — leave some indent room
+
+    const headerCell = (text: string, width: number) =>
+      new TableCell({
+        width: { size: width, type: WidthType.DXA },
+        shading: { fill: HEADER_BG, type: ShadingType.CLEAR },
+        borders: cellBorders,
+        margins: { top: 60, bottom: 60, left: 100, right: 100 },
+        children: [new Paragraph({
+          children: [t(text, { bold: true, size: 18, color: WHITE })],
+          alignment: AlignmentType.CENTER,
+        })],
+        verticalAlign: VerticalAlign.CENTER,
       })
-      .filter(Boolean)
-      .join('')
 
-    const projectDetailsHtml = group.projects.map((project) => {
+    const dataCell = (text: string, width: number, shade = false, align: string = AlignmentType.LEFT) =>
+      new TableCell({
+        width: { size: width, type: WidthType.DXA },
+        shading: { fill: shade ? ROW_ALT : WHITE, type: ShadingType.CLEAR },
+        borders: cellBorders,
+        margins: { top: 60, bottom: 60, left: 100, right: 100 },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        children: [new Paragraph({ children: [t(text, { size: 18, color: MID })], alignment: align as any })],
+        verticalAlign: VerticalAlign.CENTER,
+      })
+
+    const headerRow = new TableRow({
+      tableHeader: true,
+      children: [
+        headerCell('항목', colW[0]),
+        headerCell('예정일', colW[1]),
+        headerCell('실행일', colW[2]),
+        headerCell('상태', colW[3]),
+      ],
+    })
+
+    const dataRows = items.map((item, idx) => {
+      const shade = idx % 2 === 1
+      const statusLabel = MILESTONE_STATUS_LABEL[item.status ?? 'planned'] ?? (item.status ?? '예정')
+      return new TableRow({
+        children: [
+          dataCell(item.title, colW[0], shade),
+          dataCell(item.start_date, colW[1], shade, AlignmentType.CENTER),
+          dataCell(item.end_date ?? 'N/A', colW[2], shade, AlignmentType.CENTER),
+          dataCell(statusLabel, colW[3], shade, AlignmentType.CENTER),
+        ],
+      })
+    })
+
+    return new Table({
+      width: { size: PAGE_W, type: WidthType.DXA },
+      columnWidths: [...colW],
+      rows: [headerRow, ...dataRows],
+    })
+  }
+
+  // ── Schedule section table (인원 일정) ───────────────────────────────
+  const schedulePersonTable = (entries: typeof report.week_schedule, ownerDisplay: string) => {
+    const colW = [2000, 2000, 2500, 2860] as const
+
+    const headerCell = (text: string, w: number) =>
+      new TableCell({
+        width: { size: w, type: WidthType.DXA },
+        shading: { fill: HEADER_BG, type: ShadingType.CLEAR },
+        borders: cellBorders,
+        margins: { top: 60, bottom: 60, left: 100, right: 100 },
+        children: [new Paragraph({ children: [t(text, { bold: true, size: 18, color: WHITE })], alignment: AlignmentType.CENTER })],
+        verticalAlign: VerticalAlign.CENTER,
+      })
+
+    const dataCell = (text: string, w: number, shade: boolean, align: string = AlignmentType.LEFT) =>
+      new TableCell({
+        width: { size: w, type: WidthType.DXA },
+        shading: { fill: shade ? ROW_ALT : WHITE, type: ShadingType.CLEAR },
+        borders: cellBorders,
+        margins: { top: 60, bottom: 60, left: 100, right: 100 },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        children: [new Paragraph({ children: [t(text, { size: 18, color: MID })], alignment: align as any })],
+        verticalAlign: VerticalAlign.CENTER,
+      })
+
+    const headerRow = new TableRow({
+      tableHeader: true,
+      children: [
+        headerCell('이름', colW[0]),
+        headerCell('구분', colW[1]),
+        headerCell('기간', colW[2]),
+        headerCell('내용', colW[3]),
+      ],
+    })
+
+    const dataRows = entries.map((item, idx) => {
+      const shade = idx % 2 === 1
+      return new TableRow({
+        children: [
+          dataCell(ownerDisplay, colW[0], shade),
+          dataCell(item.type_name ?? '', colW[1], shade, AlignmentType.CENTER),
+          dataCell(formatExportDateRange(item.start_date, item.end_date), colW[2], shade, AlignmentType.CENTER),
+          dataCell(item.details || 'N/A', colW[3], shade),
+        ],
+      })
+    })
+
+    return new Table({
+      width: { size: 9360, type: WidthType.DXA },
+      columnWidths: [...colW],
+      rows: [headerRow, ...dataRows],
+    })
+  }
+
+  // ── Build document body ──────────────────────────────────────────────
+  const children: (InstanceType<typeof Paragraph> | InstanceType<typeof Table>)[] = []
+
+  // Title
+  children.push(
+    new Paragraph({
+      children: [t(`[주간보고 Week-${report.week_number}: 주요 Issue]`, { bold: true, size: 32, color: BLUE })],
+      spacing: { before: 0, after: 80 },
+      alignment: AlignmentType.LEFT,
+    }),
+    new Paragraph({
+      children: [
+        t(`담당자: `, { size: 18, color: MUTED }),
+        t(`${ownerName} ${ownerRank}`, { bold: true, size: 18, color: MID }),
+        t(`   |   주간: `, { size: 18, color: MUTED }),
+        t(report.week_start ?? '', { size: 18, color: MID }),
+      ],
+      spacing: { before: 0, after: 240 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: BLUE, space: 4 } },
+    }),
+  )
+
+  // ── A. Project 특이사항 ──────────────────────────────────────────────
+  children.push(sectionHeading('A. Project 특이사항'))
+
+  for (const group of groupedProjects) {
+    const groupAssignees = uniqueAssignees(
+      group.projects.flatMap((p) => projectMap.get(p.project_id)?.assignees ?? []),
+    )
+    children.push(groupTitle(`[${group.solution}]  ${formatAssignees(groupAssignees)}`))
+    children.push(subLabel('1. 특이사항'))
+
+    const hasRemarks = group.projects.some((p) => p.remarks?.trim())
+    if (!hasRemarks) {
+      children.push(bodyPara('N/A', { color: MUTED }))
+    } else {
+      for (const project of group.projects) {
+        const remark = project.remarks?.trim()
+        if (!remark) continue
+        if (group.projects.length > 1) {
+          children.push(new Paragraph({
+            children: [
+              t(`${project.project_name}: `, { bold: true, size: 18, color: DARK }),
+              t(remark, { size: 18, color: MID }),
+            ],
+            spacing: { before: 40, after: 40 },
+          }))
+        } else {
+          children.push(bodyPara(remark))
+        }
+      }
+    }
+
+    children.push(subLabel('2. Solution Name / Location / Company / Project / WBS / Assignees'))
+
+    for (const project of group.projects) {
       const sourceProject = projectMap.get(project.project_id)
       const assignees = formatAssignees(sourceProject?.assignees ?? [])
-      const schedulesHtml = project.project_schedules.length > 0
-        ? `
-          <table>
-            <thead>
-              <tr>
-                <th>항목</th>
-                <th>예정일</th>
-                <th>실행일</th>
-                <th>상태</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${project.project_schedules.map((item) => `
-                <tr>
-                  <td>${escapeHtml(item.title)}</td>
-                  <td>${escapeHtml(item.start_date)}</td>
-                  <td>${escapeHtml(item.end_date ?? 'N/A')}</td>
-                  <td>${escapeHtml(MILESTONE_STATUS_LABEL[item.status ?? 'planned'] ?? (item.status ?? '예정'))}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        `
-        : '<p>N/A</p>'
 
-      const weeklyProgress = project.issue_items.flatMap((issue) =>
-        issue.issue_progresses.map((progress) => `
-          <li>
-            <strong>${escapeHtml(issue.title)}</strong>: ${escapeHtml(progress.title)}
-            ${progress.details ? ` / ${escapeHtml(progress.details)}` : ''}
-            <span class="muted">(${escapeHtml(formatExportDateRange(progress.start_date, progress.end_date))})</span>
-          </li>
-        `),
+      // Project header
+      children.push(projectHeaderBar(
+        [project.solution_product, project.location, project.company, project.project_name, project.wbs_number, assignees]
+          .map((v) => v || 'N/A').join('  /  ')
+      ))
+
+      // Schedules
+      children.push(new Paragraph({
+        children: [t('스케줄', { bold: true, size: 18, color: DARK })],
+        spacing: { before: 100, after: 60 },
+        indent: { left: 120 },
+      }))
+      if (project.project_schedules.length > 0) {
+        children.push(scheduleTable(project.project_schedules))
+      } else {
+        children.push(new Paragraph({
+          children: [t('N/A', { size: 18, color: MUTED })],
+          spacing: { before: 40, after: 40 },
+          indent: { left: 120 },
+        }))
+      }
+
+      // Progress
+      children.push(new Paragraph({
+        children: [t('진행 상황', { bold: true, size: 18, color: DARK })],
+        spacing: { before: 120, after: 60 },
+        indent: { left: 120 },
+      }))
+
+      const progressItems = project.issue_items.flatMap((issue) =>
+        issue.issue_progresses.map((p) => ({
+          issueTitle: issue.title,
+          progressTitle: p.title,
+          details: p.details,
+          dateRange: formatExportDateRange(p.start_date, p.end_date),
+        })),
       )
 
-      return `
-        <div class="project-block">
-          <p class="project-line">
-            ${escapeHtml(project.solution_product || 'N/A')} / ${escapeHtml(project.location || 'N/A')} / ${escapeHtml(project.company || 'N/A')} / ${escapeHtml(project.project_name)} / ${escapeHtml(project.wbs_number || 'N/A')} / ${escapeHtml(assignees)}
-          </p>
-          <div class="sub-block">
-            <p class="sub-title">스케줄</p>
-            ${schedulesHtml}
-          </div>
-          <div class="sub-block">
-            <p class="sub-title">진행 상황</p>
-            ${weeklyProgress.length > 0 ? `<ul>${weeklyProgress.join('')}</ul>` : '<p>N/A</p>'}
-          </div>
-        </div>
-      `
-    }).join('')
+      if (progressItems.length === 0) {
+        children.push(new Paragraph({
+          children: [t('N/A', { size: 18, color: MUTED })],
+          spacing: { before: 40, after: 40 },
+          indent: { left: 240 },
+        }))
+      } else {
+        for (const item of progressItems) {
+          children.push(bulletItem([
+            t(`${item.issueTitle}: `, { bold: true, size: 18, color: DARK }),
+            t(item.progressTitle, { size: 18, color: MID }),
+            ...(item.details ? [t(` / ${item.details}`, { size: 18, color: MID })] : []),
+            t(`  (${item.dateRange})`, { size: 18, color: MUTED }),
+          ]))
+        }
+      }
+      children.push(emptyPara(60))
+    }
+  }
 
-    return `
-      <div class="section-block">
-        <p class="solution-title">[${escapeHtml(group.solution)}] ${escapeHtml(formatAssignees(groupAssignees))}</p>
-        <p class="section-label">1. 특이사항</p>
-        ${remarksHtml || '<p>N/A</p>'}
-        <p class="section-label">2. Solution Name / Project Location / Company Name / Project Name / WBS Number / Assignees + 직책</p>
-        ${projectDetailsHtml}
-      </div>
-    `
-  }).join('')
+  children.push(emptyPara(120))
+
+  // ── B. 인원 일정 ─────────────────────────────────────────────────────
+  children.push(sectionHeading('B. 인원 일정'))
 
   const scheduleTypes = ['출장', '외근', '휴가', '휴일근무']
   const ownerDisplay = [ownerName, ownerRank].filter(Boolean).join(' ')
-  const scheduleSection = scheduleTypes.map((type, index) => {
-    const entries = report.week_schedule.filter((item) => item.type_name === type)
-    const rows = entries.length > 0
-      ? entries.map((item) => `
-        <li>${escapeHtml(ownerDisplay)} : ${escapeHtml(item.location || 'N/A')} / ${escapeHtml(formatExportDateRange(item.start_date, item.end_date))} / ${escapeHtml(item.details || 'N/A')}</li>
-      `).join('')
-      : '<li>N/A</li>'
-    return `
-      <p class="section-label">${index + 1}) ${escapeHtml(type)}</p>
-      <ul>${rows}</ul>
-    `
-  }).join('')
 
-  return `
-    <html xmlns:o="urn:schemas-microsoft-com:office:office"
-          xmlns:w="urn:schemas-microsoft-com:office:word"
-          xmlns="http://www.w3.org/TR/REC-html40">
-      <head>
-        <meta charset="utf-8" />
-        <title>${escapeHtml(title)}</title>
-        <style>
-          body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; margin: 32px; color: #0f172a; line-height: 1.55; font-size: 11pt; }
-          h1 { font-size: 16pt; margin: 0 0 20px; color: #0054a6; }
-          p { margin: 0 0 8px; }
-          .section-head { font-size: 13pt; font-weight: 700; margin: 22px 0 10px; }
-          .solution-title { font-weight: 700; margin: 14px 0 8px; }
-          .section-label { font-weight: 700; margin: 10px 0 6px; }
-          .project-block { margin: 12px 0 16px; padding: 10px 12px; border: 1px solid #dbe5f0; }
-          .project-line { font-weight: 700; margin-bottom: 10px; }
-          .sub-block { margin: 8px 0 0; }
-          .sub-title { font-weight: 700; margin-bottom: 6px; color: #1e293b; }
-          .muted { color: #64748b; }
-          ul { margin: 4px 0 8px 20px; padding: 0; }
-          li { margin: 0 0 6px; }
-          table { width: 100%; border-collapse: collapse; margin: 6px 0 10px; }
-          th, td { border: 1px solid #dbe5f0; padding: 6px 8px; text-align: left; vertical-align: top; }
-          th { background: #f8fafc; }
-        </style>
-      </head>
-      <body>
-        <h1>${escapeHtml(title)}</h1>
-        <p class="section-head">A. Project 특이사항</p>
-        ${projectSections || '<p>N/A</p>'}
-        <p class="section-head">B. 인원 일정</p>
-        ${scheduleSection}
-      </body>
-    </html>
-  `
+  for (let i = 0; i < scheduleTypes.length; i++) {
+    const type = scheduleTypes[i]
+    const entries = report.week_schedule.filter((item) => item.type_name === type)
+    children.push(subLabel(`${i + 1}) ${type}`))
+    if (entries.length > 0) {
+      children.push(schedulePersonTable(entries, ownerDisplay))
+    } else {
+      children.push(bodyPara('N/A', { color: MUTED }))
+    }
+    children.push(emptyPara(80))
+  }
+
+  // ── Assemble document ────────────────────────────────────────────────
+  const doc = new Document({
+    numbering: {
+      config: [
+        {
+          reference: 'bullets',
+          levels: [{
+            level: 0,
+            format: LevelFormat.BULLET,
+            text: '•',
+            alignment: AlignmentType.LEFT,
+            style: { paragraph: { indent: { left: 480, hanging: 240 } } },
+          }],
+        },
+      ],
+    },
+    styles: {
+      default: {
+        document: { run: { font: 'Malgun Gothic', size: 20, color: DARK } },
+      },
+    },
+    sections: [{
+      properties: {
+        page: {
+          size: { width: 12240, height: 15840 },
+          margin: { top: 1080, right: 1080, bottom: 1080, left: 1080 },
+        },
+      },
+      headers: {
+        default: new Header({
+          children: [new Paragraph({
+            children: [
+              t(`주간보고  Week-${report.week_number}`, { size: 16, color: MUTED }),
+              t('   |   ', { size: 16, color: BORDER_C }),
+              t(`${ownerName} ${ownerRank}`, { size: 16, color: MUTED }),
+            ],
+            alignment: AlignmentType.RIGHT,
+            border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: BORDER_C, space: 4 } },
+          })],
+        }),
+      },
+      footers: {
+        default: new Footer({
+          children: [new Paragraph({
+            children: [
+              t('WeeklyReport  ', { size: 16, color: MUTED }),
+              t('   |   Page ', { size: 16, color: BORDER_C }),
+              new TextRun({ children: [PageNumber.CURRENT], font: 'Malgun Gothic', size: 16, color: MUTED }),
+              t(' / ', { size: 16, color: BORDER_C }),
+              new TextRun({ children: [PageNumber.TOTAL_PAGES], font: 'Malgun Gothic', size: 16, color: MUTED }),
+            ],
+            alignment: AlignmentType.CENTER,
+            border: { top: { style: BorderStyle.SINGLE, size: 4, color: BORDER_C, space: 4 } },
+          })],
+        }),
+      },
+      children,
+    }],
+  })
+
+  return Packer.toBlob(doc)
 }
 
 function uniqueAssignees(assignees: { id: number; name: string; rank_name: string }[]) {
