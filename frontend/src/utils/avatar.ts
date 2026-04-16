@@ -9,7 +9,7 @@ export function avatarColor(id: number): string {
 export function avatarInitials(name: string): string {
   if (!name || name === '?') return '?'
   const parts = name.trim().split(/\s+/)
-  if (parts.length === 1) return parts[0].slice(0, 2)
+  if (parts.length === 1) return parts[0].slice(1, 3)
   return parts[0][0] + parts[1][0]
 }
 

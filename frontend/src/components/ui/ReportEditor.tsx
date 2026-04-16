@@ -5,6 +5,7 @@ import { useToast } from './Toast'
 import { Modal } from './Modal'
 import { CarryForwardModal } from './CarryForwardModal'
 import { fmtTime, shortDate } from '../../hooks/useDates'
+import { useAuthStore } from '../../store'
 import type { ReportFull, ReportProject, Project, ProjectStatus } from '../../types'
 
 interface Props {
@@ -68,10 +69,12 @@ const MILESTONE_STATUS_CHIP: Record<string, string> = {
 
 export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefresh }: Props) {
   const { toast } = useToast()
+  const { user } = useAuthStore()
   const locked = report.is_locked === 1 && !isAdmin
   const canEdit = !locked && !readOnly
   const [submitConfirm, setSubmitConfirm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const dirtyRef = useRef<Set<number>>(new Set())
   const setDirty = useCallback((pid: number) => { dirtyRef.current.add(pid) }, [])
@@ -129,6 +132,34 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
     }
   }
 
+  async function handleExportWord() {
+    setExporting(true)
+    try {
+      const projectsRes = await projectsApi.list()
+      const projectMap = new Map(projectsRes.data.map((project) => [project.id, project]))
+      const doc = buildWeeklyReportWordDocument({
+        report,
+        groupedProjects,
+        projectMap,
+        ownerName: report.owner_name,
+        ownerRank: user?.rank_name ?? '',
+      })
+      const blob = new Blob(['\ufeff', doc], { type: 'application/msword;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `weekly-report-week-${report.week_number}.doc`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      toast(e.response?.data?.detail ?? 'Word 내보내기에 실패했습니다.', 'error')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="report-editor">
       <div className="report-hero">
@@ -158,6 +189,9 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
         </div>
 
         <div className="report-actions">
+          <button className="btn btn-secondary" onClick={handleExportWord} disabled={exporting}>
+            {exporting ? 'Word 생성 중...' : 'Export to Word'}
+          </button>
           {canEdit && (report.status_id === 1 || report.status_id === 4) && (
             submitConfirm ? (
               <div className="submit-confirm">
@@ -206,28 +240,29 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
               <section key={group.solution} className="report-solution-group">
                 <button
                   type="button"
-                  className="report-collapse-header"
+                  className="report-collapse-header report-solution-header"
                   onClick={() => toggleSolution(group.solution)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', textAlign: 'left' }}
                 >
                   <span className="report-collapse-icon">{collapsedSolutions[group.solution] ? '▸' : '▾'}</span>
                   <span className="report-solution-title">{group.solution}</span>
                   <span className="report-solution-count">{group.projects.length}개 프로젝트</span>
                 </button>
-                {!collapsedSolutions[group.solution] && (
-                  <div className="report-solution-list">
-                    {group.projects.map((project) => (
-                      <ProjectCard
-                        key={project.project_id}
-                        rp={project}
-                        reportId={report.id}
-                        readOnly={!canEdit}
-                        onRefresh={onRefresh}
-                        onDirtyChange={(dirty) => (dirty ? setDirty(project.project_id) : clearDirty(project.project_id))}
-                      />
-                    ))}
+                <div className={`report-collapse-panel ${collapsedSolutions[group.solution] ? '' : 'is-expanded'}`}>
+                  <div className="report-collapse-panel-inner report-collapse-panel-spacing">
+                    <div className="report-solution-list">
+                      {group.projects.map((project) => (
+                        <ProjectCard
+                          key={project.project_id}
+                          rp={project}
+                          reportId={report.id}
+                          readOnly={!canEdit}
+                          onRefresh={onRefresh}
+                          onDirtyChange={(dirty) => (dirty ? setDirty(project.project_id) : clearDirty(project.project_id))}
+                        />
+                      ))}
+                    </div>
                   </div>
-                )}
+                </div>
               </section>
             ))}
           </div>
@@ -368,8 +403,6 @@ function ProjectCard({
   const [milestoneExpanded, setMilestoneExpanded] = useState(true)
   const [issueExpanded, setIssueExpanded] = useState(true)
 
-  const progressCount = rp.issue_items.reduce((sum, issue) => sum + issue.issue_progresses.length, 0)
-
   function markDirty() {
     if (!isDirty) {
       setIsDirty(true)
@@ -426,10 +459,9 @@ function ProjectCard({
       <div className="project-card-header">
         <div className="project-card-main">
           <button
-            className="report-collapse-header"
+            className="report-collapse-header project-card-toggle"
             type="button"
             onClick={() => setProjectExpanded((value) => !value)}
-            style={{ padding: 0, minWidth: 0, flex: 1, textAlign: 'left', display: 'flex', gap: 10, alignItems: 'flex-start' }}
             title={projectExpanded ? '프로젝트 접기' : '프로젝트 펼치기'}
           >
             <span className="report-collapse-icon">{projectExpanded ? '▾' : '▸'}</span>
@@ -443,19 +475,21 @@ function ProjectCard({
               </div>
               <div className="project-meta">
                 {(rp.solution_product || '기타')} · {rp.company} · {rp.location}
-                {rp.wbs_number ? ` · WBS ${rp.wbs_number}` : ''}
+                {rp.wbs_number ? <> · <span className="project-wbs">WBS {rp.wbs_number}</span></> : ''}
               </div>
             </div>
           </button>
         </div>
 
         <div className="project-toolbar">
-          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/projects/${rp.project_id}`)}>프로젝트 열기</button>
-          <button className="btn btn-ghost btn-sm" disabled={refreshing} onClick={refreshProject}>
-            {refreshing ? '새로고침 중...' : '새로고침'}
-          </button>
+          <div className="project-toolbar-group">
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/projects/${rp.project_id}`)}>프로젝트 열기</button>
+            <button className="btn btn-ghost btn-sm" disabled={refreshing} onClick={refreshProject}>
+              {refreshing ? '새로고침 중...' : '새로고침'}
+            </button>
+          </div>
           {!readOnly && (
-            <>
+            <div className="project-toolbar-group project-toolbar-group--edit">
               <select className="status-select" value={projectStatus} onChange={(e) => { setProjectStatus(e.target.value as ProjectStatus); markDirty() }}>
                 {PROJECT_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
@@ -470,107 +504,120 @@ function ProjectCard({
               <button className="btn btn-primary btn-sm" disabled={!isDirty || saving} onClick={save}>
                 {saving ? '저장 중...' : '저장'}
               </button>
-            </>
+            </div>
           )}
         </div>
       </div>
 
-      <div className="project-mini-stats">
-        <div className="mini-stat"><span className="mini-stat-num">{rp.project_schedules.length}</span><span className="mini-stat-label">마일스톤</span></div>
-        <div className="mini-stat"><span className="mini-stat-num">{rp.issue_items.length}</span><span className="mini-stat-label">이슈</span></div>
-        <div className="mini-stat"><span className="mini-stat-num">{progressCount}</span><span className="mini-stat-label">주간 진행내역</span></div>
+      <div className={`report-collapse-panel ${projectExpanded ? 'is-expanded' : ''}`}>
+        <div className="report-collapse-panel-inner">
+          <div className="project-detail-table">
+            <section className="project-detail-row">
+              <button
+                type="button"
+                className="project-detail-label project-detail-label-button"
+                onClick={() => setMilestoneExpanded((value) => !value)}
+              >
+                <span className="project-detail-label-inner">
+                  <span className="project-detail-label-title-row">
+                    <span className="report-collapse-icon">{milestoneExpanded ? '▾' : '▸'}</span>
+                    <span>마일스톤</span>
+                  </span>
+                </span>
+              </button>
+              <div className="project-detail-value">
+                <div className={`report-collapse-panel report-collapse-panel--nested ${milestoneExpanded ? 'is-expanded' : ''}`}>
+                  <div className="report-collapse-panel-inner">
+                    {rp.project_schedules.length === 0 ? (
+                      <div style={{ fontSize: 12, color: 'var(--ink-5)' }}>집계된 마일스톤이 없습니다.</div>
+                    ) : (
+                      <div className="table-wrap report-milestone-table report-surface-table">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>항목</th>
+                              <th>예정일</th>
+                              <th>실행일</th>
+                              <th>상태</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rp.project_schedules.map((item) => (
+                              <tr key={item.id}>
+                                <td className="fw-500">{item.title}</td>
+                                <td>{item.start_date}</td>
+                                <td>{item.end_date ?? <span className="text-muted">-</span>}</td>
+                                <td>
+                                  <span className={`chip ${MILESTONE_STATUS_CHIP[item.status ?? 'planned'] ?? 'chip-draft'}`}>
+                                    {MILESTONE_STATUS_LABEL[item.status ?? 'planned'] ?? (item.status ?? '예정')}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="project-detail-row">
+              <button
+                type="button"
+                className="project-detail-label project-detail-label-button"
+                onClick={() => setIssueExpanded((value) => !value)}
+              >
+                <span className="project-detail-label-inner">
+                  <span className="project-detail-label-title-row">
+                    <span className="report-collapse-icon">{issueExpanded ? '▾' : '▸'}</span>
+                    <span>이슈 트래커</span>
+                  </span>
+                </span>
+              </button>
+              <div className="project-detail-value">
+                <div className={`report-collapse-panel report-collapse-panel--nested ${issueExpanded ? 'is-expanded' : ''}`}>
+                  <div className="report-collapse-panel-inner">
+                    {rp.issue_items.length === 0 ? (
+                      <div style={{ fontSize: 12, color: 'var(--ink-5)' }}>이번 주에 반영된 이슈 진행내역이 없습니다.</div>
+                    ) : (
+                      <div className="report-issue-list">
+                        {rp.issue_items.map((issue) => (
+                          <ReportIssueCard key={issue.id} issue={issue} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="project-detail-row">
+              <div className="project-detail-label">
+                <span className="project-detail-label-inner">
+                  <span className="project-detail-label-title-row">
+                    <span>Remarks</span>
+                  </span>
+                </span>
+              </div>
+              <div className="project-detail-value">
+                {readOnly ? (
+                  <div className="project-remarks-block">{remarks || '메모가 없습니다.'}</div>
+                ) : (
+                  <textarea
+                    className="project-remarks-input"
+                    rows={2}
+                    value={remarks}
+                    onChange={(e) => { setRemarks(e.target.value); markDirty() }}
+                    placeholder="이번 주 보고서에 남길 메모를 적어 주세요."
+                  />
+                )}
+              </div>
+            </section>
+          </div>
+        </div>
       </div>
-      {projectExpanded && (
-        <>
-          <div className="subsection">
-            <div className="subsection-header report-subsection-header">
-              <span className="subsection-title">보고서 메모</span>
-            </div>
-            {readOnly ? (
-              <div className="project-remarks-block">{remarks || '메모가 없습니다.'}</div>
-            ) : (
-              <textarea
-                className="project-remarks-input"
-                rows={2}
-                value={remarks}
-                onChange={(e) => { setRemarks(e.target.value); markDirty() }}
-                placeholder="이번 주 보고서에 남길 메모를 적어 주세요."
-              />
-            )}
-          </div>
-
-          <div className="subsection">
-            <button
-              type="button"
-              className="subsection-header report-subsection-header report-collapse-header"
-              onClick={() => setMilestoneExpanded((value) => !value)}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="report-collapse-icon">{milestoneExpanded ? '▾' : '▸'}</span>
-                <span className="subsection-title">마일스톤</span>
-              </span>
-              <span className="text-sm text-muted">프로젝트 전체 마일스톤 자동 집계</span>
-            </button>
-            {milestoneExpanded && (
-              rp.project_schedules.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--ink-5)' }}>집계된 마일스톤이 없습니다.</div>
-              ) : (
-                <div className="table-wrap report-milestone-table report-surface-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>항목</th>
-                        <th>예정일</th>
-                        <th>실행일</th>
-                        <th>상태</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rp.project_schedules.map((item) => (
-                        <tr key={item.id}>
-                          <td className="fw-500">{item.title}</td>
-                          <td>{item.start_date}</td>
-                          <td>{item.end_date ?? <span className="text-muted">-</span>}</td>
-                          <td>
-                            <span className={`chip ${MILESTONE_STATUS_CHIP[item.status ?? 'planned'] ?? 'chip-draft'}`}>
-                              {MILESTONE_STATUS_LABEL[item.status ?? 'planned'] ?? (item.status ?? '예정')}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            )}
-          </div>
-
-          <div className="subsection">
-            <button
-              type="button"
-              className="subsection-header report-subsection-header report-collapse-header"
-              onClick={() => setIssueExpanded((value) => !value)}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="report-collapse-icon">{issueExpanded ? '▾' : '▸'}</span>
-                <span className="subsection-title">이슈 트래커</span>
-              </span>
-              <span className="text-sm text-muted">이번 주에 작성한 진행내역만 표시</span>
-            </button>
-            {issueExpanded && (
-              rp.issue_items.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--ink-5)' }}>이번 주에 반영된 이슈 진행내역이 없습니다.</div>
-              ) : (
-                <div className="report-issue-list">
-                  {rp.issue_items.map((issue) => (
-                    <ReportIssueCard key={issue.id} issue={issue} />
-                  ))}
-                </div>
-              )
-            )}
-          </div>
-        </>
-      )}
     </article>
   )
 }
@@ -641,6 +688,181 @@ function CommentsSection({ reportId, comments, onAdded }: { reportId: number; co
   )
 }
 
+function buildWeeklyReportWordDocument({
+  report,
+  groupedProjects,
+  projectMap,
+  ownerName,
+  ownerRank,
+}: {
+  report: ReportFull
+  groupedProjects: { solution: string; projects: ReportProject[] }[]
+  projectMap: Map<number, Project>
+  ownerName: string
+  ownerRank: string
+}) {
+  const title = `[주간보고 Week-${report.week_number}: 주요 Issue]`
+  const projectSections = groupedProjects.map((group) => {
+    const groupAssignees = uniqueAssignees(
+      group.projects.flatMap((project) => projectMap.get(project.project_id)?.assignees ?? []),
+    )
+
+    const remarksHtml = group.projects
+      .map((project) => {
+        const remark = project.remarks?.trim()
+        if (!remark) return ''
+        return group.projects.length > 1
+          ? `<p><strong>${escapeHtml(project.project_name)}</strong>: ${escapeHtml(remark)}</p>`
+          : `<p>${escapeHtml(remark)}</p>`
+      })
+      .filter(Boolean)
+      .join('')
+
+    const projectDetailsHtml = group.projects.map((project) => {
+      const sourceProject = projectMap.get(project.project_id)
+      const assignees = formatAssignees(sourceProject?.assignees ?? [])
+      const schedulesHtml = project.project_schedules.length > 0
+        ? `
+          <table>
+            <thead>
+              <tr>
+                <th>항목</th>
+                <th>예정일</th>
+                <th>실행일</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${project.project_schedules.map((item) => `
+                <tr>
+                  <td>${escapeHtml(item.title)}</td>
+                  <td>${escapeHtml(item.start_date)}</td>
+                  <td>${escapeHtml(item.end_date ?? 'N/A')}</td>
+                  <td>${escapeHtml(MILESTONE_STATUS_LABEL[item.status ?? 'planned'] ?? (item.status ?? '예정'))}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `
+        : '<p>N/A</p>'
+
+      const weeklyProgress = project.issue_items.flatMap((issue) =>
+        issue.issue_progresses.map((progress) => `
+          <li>
+            <strong>${escapeHtml(issue.title)}</strong>: ${escapeHtml(progress.title)}
+            ${progress.details ? ` / ${escapeHtml(progress.details)}` : ''}
+            <span class="muted">(${escapeHtml(formatExportDateRange(progress.start_date, progress.end_date))})</span>
+          </li>
+        `),
+      )
+
+      return `
+        <div class="project-block">
+          <p class="project-line">
+            ${escapeHtml(project.solution_product || 'N/A')} / ${escapeHtml(project.location || 'N/A')} / ${escapeHtml(project.company || 'N/A')} / ${escapeHtml(project.project_name)} / ${escapeHtml(project.wbs_number || 'N/A')} / ${escapeHtml(assignees)}
+          </p>
+          <div class="sub-block">
+            <p class="sub-title">스케줄</p>
+            ${schedulesHtml}
+          </div>
+          <div class="sub-block">
+            <p class="sub-title">진행 상황</p>
+            ${weeklyProgress.length > 0 ? `<ul>${weeklyProgress.join('')}</ul>` : '<p>N/A</p>'}
+          </div>
+        </div>
+      `
+    }).join('')
+
+    return `
+      <div class="section-block">
+        <p class="solution-title">[${escapeHtml(group.solution)}] ${escapeHtml(formatAssignees(groupAssignees))}</p>
+        <p class="section-label">1. 특이사항</p>
+        ${remarksHtml || '<p>N/A</p>'}
+        <p class="section-label">2. Solution Name / Project Location / Company Name / Project Name / WBS Number / Assignees + 직책</p>
+        ${projectDetailsHtml}
+      </div>
+    `
+  }).join('')
+
+  const scheduleTypes = ['출장', '외근', '휴가', '휴일근무']
+  const ownerDisplay = [ownerName, ownerRank].filter(Boolean).join(' ')
+  const scheduleSection = scheduleTypes.map((type, index) => {
+    const entries = report.week_schedule.filter((item) => item.type_name === type)
+    const rows = entries.length > 0
+      ? entries.map((item) => `
+        <li>${escapeHtml(ownerDisplay)} : ${escapeHtml(item.location || 'N/A')} / ${escapeHtml(formatExportDateRange(item.start_date, item.end_date))} / ${escapeHtml(item.details || 'N/A')}</li>
+      `).join('')
+      : '<li>N/A</li>'
+    return `
+      <p class="section-label">${index + 1}) ${escapeHtml(type)}</p>
+      <ul>${rows}</ul>
+    `
+  }).join('')
+
+  return `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office"
+          xmlns:w="urn:schemas-microsoft-com:office:word"
+          xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(title)}</title>
+        <style>
+          body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; margin: 32px; color: #0f172a; line-height: 1.55; font-size: 11pt; }
+          h1 { font-size: 16pt; margin: 0 0 20px; color: #0054a6; }
+          p { margin: 0 0 8px; }
+          .section-head { font-size: 13pt; font-weight: 700; margin: 22px 0 10px; }
+          .solution-title { font-weight: 700; margin: 14px 0 8px; }
+          .section-label { font-weight: 700; margin: 10px 0 6px; }
+          .project-block { margin: 12px 0 16px; padding: 10px 12px; border: 1px solid #dbe5f0; }
+          .project-line { font-weight: 700; margin-bottom: 10px; }
+          .sub-block { margin: 8px 0 0; }
+          .sub-title { font-weight: 700; margin-bottom: 6px; color: #1e293b; }
+          .muted { color: #64748b; }
+          ul { margin: 4px 0 8px 20px; padding: 0; }
+          li { margin: 0 0 6px; }
+          table { width: 100%; border-collapse: collapse; margin: 6px 0 10px; }
+          th, td { border: 1px solid #dbe5f0; padding: 6px 8px; text-align: left; vertical-align: top; }
+          th { background: #f8fafc; }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(title)}</h1>
+        <p class="section-head">A. Project 특이사항</p>
+        ${projectSections || '<p>N/A</p>'}
+        <p class="section-head">B. 인원 일정</p>
+        ${scheduleSection}
+      </body>
+    </html>
+  `
+}
+
+function uniqueAssignees(assignees: { id: number; name: string; rank_name: string }[]) {
+  const seen = new Set<number>()
+  return assignees.filter((assignee) => {
+    if (seen.has(assignee.id)) return false
+    seen.add(assignee.id)
+    return true
+  })
+}
+
+function formatAssignees(assignees: { name: string; rank_name: string }[]) {
+  if (!assignees.length) return 'N/A'
+  return assignees.map((assignee) => `${assignee.name} ${assignee.rank_name}`).join(', ')
+}
+
+function formatExportDateRange(start: string, end?: string | null) {
+  if (!end || end === start) return start
+  return `${start} ~ ${end}`
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 function formatRange(start: string, end?: string | null) {
   return end && end !== start ? `${shortDate(start)} ~ ${shortDate(end)}` : shortDate(start)
 }
@@ -669,7 +891,6 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
           type="button"
           onClick={() => setExpanded((value) => !value)}
           className="report-issue-hitarea"
-          style={{ flex: 1, minWidth: 0, display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '10px 12px', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
         >
             <div className="report-issue-title-row">
             <span className="report-issue-title">{issue.title}</span>
@@ -677,7 +898,6 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
               {PRIORITY_LABEL[priorityKey] ?? '중요'}
             </span>
             <span className={`chip ${statusChip}`} style={{ fontSize: 10 }}>{issue.status}</span>
-            <span className="report-issue-count">{issue.issue_progresses.length}개 진행내역</span>
             </div>
             {issue.details && <div className="report-issue-summary">{issue.details}</div>}
             <div className="report-issue-meta">

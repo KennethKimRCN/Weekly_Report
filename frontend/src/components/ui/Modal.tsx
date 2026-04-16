@@ -12,9 +12,10 @@ interface ModalProps {
 
 export function Modal({ title, onClose, children, footer, size = 'default', className = '' }: ModalProps) {
   if (typeof document === 'undefined') return null
+  const overlayClassName = className.includes('report-history-modal') ? 'modal-overlay modal-overlay-top' : 'modal-overlay'
 
   return createPortal(
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={overlayClassName} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`modal ${size === 'lg' ? 'modal-lg' : ''} ${className}`.trim()}>
         <div className="modal-header">
           <span className="modal-title">{title}</span>

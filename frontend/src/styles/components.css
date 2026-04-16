@@ -391,6 +391,11 @@ tr.clickable:focus-visible td { background: var(--blue-light); }
   animation: fadeIn .15s ease;
   padding: 20px;
 }
+
+.modal-overlay-top {
+  align-items: flex-start;
+  overflow-y: auto;
+}
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .modal {

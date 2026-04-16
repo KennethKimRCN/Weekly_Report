@@ -67,7 +67,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             <MenuIcon />
           </button>
           <div className="sidebar-brand">
-            <span className="sidebar-eyebrow">DI 실행 부서</span>
+            <span className="sidebar-eyebrow">Digital Innovation Division</span>
             <span className="sidebar-logo">WeeklyReport</span>
           </div>
         </div>
