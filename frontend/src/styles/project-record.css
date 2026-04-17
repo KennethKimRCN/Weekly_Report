@@ -50,17 +50,27 @@
 
 .project-issue-card {
   border: 1px solid var(--border-2);
-  border-radius: 14px;
-  background: rgba(255,255,255,.88);
-  padding: 14px;
-  box-shadow: 0 8px 20px rgba(60,64,67,.05);
-  transition: background .16s ease, box-shadow .16s ease, transform .16s ease;
+  border-left: 3px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 11px 12px 10px;
+  box-shadow: 0 1px 3px rgba(15,23,42,.05);
+  transition: box-shadow .15s ease, border-color .15s ease, transform .12s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
 .project-issue-card:hover {
   transform: translateY(-1px);
-  box-shadow: 0 12px 24px rgba(60,64,67,.08);
+  box-shadow: 0 4px 12px rgba(15,23,42,.09);
 }
-.project-issue-card.is-closed { opacity: 0.75; }
+.project-issue-card.is-closed { opacity: 0.6; }
+
+/* Status accent on left border */
+.issue-card--draft     { border-left-color: var(--ink-5); }
+.issue-card--active    { border-left-color: var(--blue); }
+.issue-card--done      { border-left-color: var(--green); }
+.issue-card--cancelled { border-left-color: var(--surface-4); }
 
 .project-issue-progress-collapse {
   display: grid;
@@ -84,27 +94,97 @@
 /* ── Issue card: clickable style ─────────────────────────────────────────── */
 .issue-card-clickable {
   cursor: pointer;
-  transition: box-shadow .15s, border-color .15s, transform .1s;
 }
 .issue-card-clickable:hover {
-  border-color: var(--blue);
-  box-shadow: 0 2px 10px rgba(30,100,220,.10);
-  transform: translateY(-1px);
+  border-left-width: 3px;
 }
+.issue-card--active.issue-card-clickable:hover    { border-color: var(--blue);  box-shadow: 0 4px 14px rgba(0,84,166,.10); }
+.issue-card--draft.issue-card-clickable:hover     { border-color: var(--ink-4); box-shadow: 0 4px 14px rgba(15,23,42,.08); }
+.issue-card--done.issue-card-clickable:hover      { border-color: var(--green); box-shadow: 0 4px 14px rgba(23,114,69,.09); }
+.issue-card--cancelled.issue-card-clickable:hover { border-color: var(--border); }
 .issue-card-clickable:active { transform: translateY(0); }
+
+/* ── Top bar: priority + actions ─────────────────────────────────────────── */
+.issue-card-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 22px;
+}
+.issue-card-actions {
+  display: flex;
+  gap: 1px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+.project-issue-card:hover .issue-card-actions { opacity: 1; }
+
+/* ── Title ───────────────────────────────────────────────────────────────── */
+.issue-card-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+.issue-card--cancelled .issue-card-title,
+.issue-card--done .issue-card-title {
+  color: var(--ink-3);
+}
+
+/* ── Description ─────────────────────────────────────────────────────────── */
+.issue-card-details {
+  font-size: 11.5px;
+  color: var(--ink-4);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+.issue-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 3px;
+}
+.issue-card-date {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--ink-5);
+  font-variant-numeric: tabular-nums;
+}
+.issue-card-prog-count {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--blue);
+  background: var(--blue-light);
+  padding: 2px 6px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
 
 .issue-card-progress-hint {
   display: flex; align-items: center; gap: 4px;
-  margin-top: 8px; padding-top: 7px;
+  margin-top: 4px; padding-top: 7px;
   border-top: 1px solid var(--border-2);
   font-size: 11px; font-weight: 500; color: var(--blue);
-  opacity: 0.75; transition: opacity .15s;
+  opacity: 0.7; transition: opacity .15s;
 }
 .issue-card-clickable:hover .issue-card-progress-hint { opacity: 1; }
 
 /* Inline progress snippets on kanban card (progress search mode) */
 .issue-card-prog-snippets {
-  margin-top: 8px; padding-top: 8px;
+  margin-top: 6px; padding-top: 8px;
   border-top: 1px solid var(--border-2);
   display: flex; flex-direction: column; gap: 5px;
 }
@@ -124,6 +204,42 @@
   overflow: hidden;
 }
 .icps-more { font-size: 11px; color: var(--blue); font-weight: 500; padding: 2px 4px; }
+
+/* ── Issue card icon buttons (edit / delete) ─────────────────────────────── */
+.issue-card-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--ink-5);
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+.issue-card-icon-btn:hover {
+  background: var(--surface-3);
+  color: var(--ink-2);
+}
+.issue-card-icon-btn--delete:hover {
+  background: var(--red-bg);
+  color: var(--red);
+}
+.issue-card-icon-btn--confirm {
+  color: var(--green) !important;
+  opacity: 1 !important;
+}
+.issue-card-icon-btn--confirm:hover {
+  background: var(--green-bg);
+}
+.project-issue-card .issue-card-icon-btn[title="삭제 확인"],
+.project-issue-card .issue-card-icon-btn[title="취소"] {
+  opacity: 1;
+}
 
 /* ── Milestone Timeline ──────────────────────────────────────────────────── */
 .milestone-timeline { padding: 8px 4px 4px; }

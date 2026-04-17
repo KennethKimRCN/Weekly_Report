@@ -735,43 +735,74 @@ function IssueCard({
 
   return (
     <div
-      className={`project-issue-card ${closed ? 'is-closed' : ''} issue-card-clickable`}
+      className={`project-issue-card issue-card--${issue.status === '진행중' ? 'active' : issue.status === '완료' ? 'done' : issue.status === '취소' ? 'cancelled' : 'draft'} ${closed ? 'is-closed' : ''} issue-card-clickable`}
       onClick={onOpen}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onOpen()}
+      style={{ position: 'relative' }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 500, fontSize: 14, color: 'var(--ink)' }}>{issue.title}</span>
-            <span className={`chip ${priority.chip}`} style={{ fontSize: 10 }}>{priority.label}</span>
-            <span className={`chip ${statusChip}`} style={{ fontSize: 10 }}>{issue.status}</span>
-          </div>
-          {issue.details && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>{issue.details}</div>}
-          <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>
-            {issue.start_date}
-            {issue.end_date ? ` ~ ${issue.end_date}` : ''}
-            {issue.progresses.length > 0 && (
-              <span style={{ marginLeft: 4, color: 'var(--blue)', fontWeight: 500 }}>
-                · 진행내역 {issue.progresses.length}개
-              </span>
-            )}
-          </div>
-        </div>
-
+      {/* ── Top row: priority chip + action icons ── */}
+      <div className="issue-card-topbar" onClick={(e) => e.stopPropagation()}>
+        <span className={`chip ${priority.chip}`} style={{ fontSize: 10, pointerEvents: 'none' }}>{priority.label}</span>
         {canEdit && (
-          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
-            <button className="btn btn-ghost btn-sm" onClick={onEdit}>편집</button>
+          <div className="issue-card-actions">
+            <button className="issue-card-icon-btn" onClick={onEdit} title="편집" aria-label="이슈 편집">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13H3v-2L11.5 2.5z" />
+              </svg>
+            </button>
             {confirmDelete ? (
               <>
-                <button className="btn btn-danger btn-sm" onClick={onDelete}>확인</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(false)}>취소</button>
+                <button className="issue-card-icon-btn issue-card-icon-btn--confirm" onClick={onDelete} title="삭제 확인" aria-label="삭제 확인">
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="2.5 8 6 11.5 13.5 4" />
+                  </svg>
+                </button>
+                <button className="issue-card-icon-btn" onClick={() => setConfirmDelete(false)} title="취소" aria-label="취소">
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="3" y1="3" x2="13" y2="13" /><line x1="13" y1="3" x2="3" y2="13" />
+                  </svg>
+                </button>
               </>
             ) : (
-              <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }} onClick={() => setConfirmDelete(true)}>삭제</button>
+              <button className="issue-card-icon-btn issue-card-icon-btn--delete" onClick={() => setConfirmDelete(true)} title="삭제" aria-label="이슈 삭제">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="3" y1="3" x2="13" y2="13" /><line x1="13" y1="3" x2="3" y2="13" />
+                </svg>
+              </button>
             )}
           </div>
+        )}
+      </div>
+
+      {/* ── Title ── */}
+      <div className="issue-card-title">{issue.title}</div>
+
+      {/* ── Description ── */}
+      {issue.details && (
+        <div className="issue-card-details">{issue.details}</div>
+      )}
+
+      {/* ── Footer: date + progress count ── */}
+      <div className="issue-card-footer">
+        <span className="issue-card-date">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}>
+            <rect x="2" y="3" width="12" height="11" rx="2" />
+            <line x1="5" y1="1.5" x2="5" y2="4.5" />
+            <line x1="11" y1="1.5" x2="11" y2="4.5" />
+            <line x1="2" y1="7" x2="14" y2="7" />
+          </svg>
+          {issue.start_date}{issue.end_date ? ` ~ ${issue.end_date}` : ''}
+        </span>
+        {issue.progresses.length > 0 && (
+          <span className="issue-card-prog-count">
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <circle cx="8" cy="8" r="6" />
+              <polyline points="8 5 8 8 10.5 10" />
+            </svg>
+            {issue.progresses.length}
+          </span>
         )}
       </div>
 
