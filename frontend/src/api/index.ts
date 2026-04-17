@@ -2,7 +2,7 @@ import axios from 'axios'
 import type {
   LoginResponse, User, ReportSummary, ReportFull, ReportProject,
   Project, Notification, DashboardData, LookupData, AnalyticsData,
-  SearchResult, ScheduleEntry, Comment,
+  SearchResult, ScheduleEntry, Comment, GeneratedReportSummary, LlmStatus,
 } from '../types'
 
 // ── Axios instance ────────────────────────────────────────────────────────
@@ -106,6 +106,9 @@ export const reportsApi = {
     comment: string,
     parent_comment_id?: number,
   ) => http.post<Comment>(`/reports/${reportId}/comments`, { comment, parent_comment_id }),
+
+  generateSummary: (reportId: number) =>
+    http.post<GeneratedReportSummary>(`/llm/reports/${reportId}/summary`),
 }
 
 // ── Projects ──────────────────────────────────────────────────────────────
@@ -276,4 +279,8 @@ export interface CarryPreview {
 export const analyticsApi = {
   overview: (weeks = 8) =>
     http.get<AnalyticsData>('/analytics/team-overview', { params: { weeks } }),
+}
+
+export const llmApi = {
+  status: () => http.get<LlmStatus>('/llm/status'),
 }

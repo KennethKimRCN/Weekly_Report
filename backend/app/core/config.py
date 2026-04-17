@@ -18,6 +18,9 @@ SECRET_KEY = os.environ.get(
 )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:1234/v1")
+LLM_MODEL = os.environ.get("LLM_MODEL", "google/gemma-4-31b:2")
+LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "90"))
 
 
 def sunday_of_week(d: date) -> date:

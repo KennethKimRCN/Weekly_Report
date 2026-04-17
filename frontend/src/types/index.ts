@@ -132,6 +132,21 @@ export interface ReportFull extends ReportSummary {
   week_schedule: ScheduleEntry[]
 }
 
+export interface GeneratedReportSummary {
+  summary: string
+  highlights: string[]
+  source: 'llm' | 'fallback'
+  model: string | null
+  previous_week_start: string | null
+}
+
+export interface LlmStatus {
+  available: boolean
+  model: string | null
+  base_url: string
+  error: string | null
+}
+
 // ── Projects ──────────────────────────────────────────────────────────────
 export interface Assignee {
   id: number

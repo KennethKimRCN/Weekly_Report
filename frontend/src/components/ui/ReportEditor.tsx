@@ -1,12 +1,13 @@
 ﻿import { useMemo, useRef, useState, useCallback, type ReactNode } from 'react'
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { reportsApi, projectsApi } from '../../api'
+import { llmApi, reportsApi, projectsApi } from '../../api'
 import { useToast } from './Toast'
 import { Modal } from './Modal'
 import { CarryForwardModal } from './CarryForwardModal'
 import { fmtTime, shortDate } from '../../hooks/useDates'
 import { useAuthStore } from '../../store'
-import type { ReportFull, ReportProject, Project, ProjectStatus } from '../../types'
+import type { GeneratedReportSummary, LlmStatus, ReportFull, ReportProject, Project, ProjectStatus } from '../../types'
 
 interface Props {
   report: ReportFull
@@ -75,6 +76,10 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
   const [submitConfirm, setSubmitConfirm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [generatingSummary, setGeneratingSummary] = useState(false)
+  const [generatedSummary, setGeneratedSummary] = useState<GeneratedReportSummary | null>(null)
+  const [llmStatus, setLlmStatus] = useState<LlmStatus | null>(null)
+  const [selectedIssue, setSelectedIssue] = useState<ReportProject['issue_items'][number] | null>(null)
 
   const dirtyRef = useRef<Set<number>>(new Set())
   const setDirty = useCallback((pid: number) => { dirtyRef.current.add(pid) }, [])
@@ -109,6 +114,36 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
     { num: totalIssues, lbl: '이슈' },
     { num: totalProgress, lbl: '진행내역' },
   ]
+
+  useEffect(() => {
+    setGeneratedSummary(null)
+    setGeneratingSummary(false)
+  }, [report.id])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadLlmStatus() {
+      try {
+        const res = await llmApi.status()
+        if (!cancelled) setLlmStatus(res.data)
+      } catch {
+        if (!cancelled) {
+          setLlmStatus({
+            available: false,
+            model: null,
+            base_url: '',
+            error: 'offline',
+          })
+        }
+      }
+    }
+
+    loadLlmStatus()
+    return () => {
+      cancelled = true
+    }
+  }, [report.id])
 
   function toggleSolution(solution: string) {
     setCollapsedSolutions((current) => ({ ...current, [solution]: !current[solution] }))
@@ -160,6 +195,76 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
     }
   }
 
+  async function handleGenerateSummary() {
+    if (!llmStatus?.available) return
+    setGeneratingSummary(true)
+    try {
+      const res = await reportsApi.generateSummary(report.id)
+      setGeneratedSummary(res.data)
+      toast(
+        res.data.source === 'llm'
+          ? '요약을 생성했습니다.'
+          : '모델 응답이 없어 기본 요약으로 정리했습니다.',
+        'success',
+      )
+    } catch (e: any) {
+      toast(e.response?.data?.detail ?? '요약 생성에 실패했습니다.', 'error')
+    } finally {
+      setGeneratingSummary(false)
+    }
+  }
+
+  const issueLinkMap = useMemo(() => {
+    const issues = report.projects.flatMap((project) => project.issue_items)
+    return [...issues]
+      .sort((a, b) => b.title.length - a.title.length)
+      .map((issue) => ({
+        issue,
+        id: issue.id,
+        title: issue.title,
+      }))
+  }, [report.projects])
+
+  function renderSummaryText(text: string): ReactNode {
+    let remaining = text
+    const parts: ReactNode[] = []
+    let key = 0
+
+    while (remaining.length > 0) {
+      const match = issueLinkMap
+        .map((issue) => ({ issue, index: remaining.indexOf(issue.title) }))
+        .filter((entry) => entry.index >= 0)
+        .sort((a, b) => a.index - b.index || b.issue.title.length - a.issue.title.length)[0]
+
+      if (!match) {
+        parts.push(<span key={`text-${key++}`}>{remaining}</span>)
+        break
+      }
+
+      if (match.index > 0) {
+        parts.push(<span key={`text-${key++}`}>{remaining.slice(0, match.index)}</span>)
+      }
+
+      parts.push(
+        <button
+          key={`link-${key++}`}
+          type="button"
+          className="report-summary-link"
+          onClick={() => setSelectedIssue(match.issue.issue)}
+        >
+          {match.issue.title}
+        </button>,
+      )
+
+      remaining = remaining.slice(match.index + match.issue.title.length)
+    }
+
+    return parts
+  }
+
+  const llmUnavailable = llmStatus?.available === false
+  const summaryButtonTitle = llmUnavailable ? 'LLM 오프라인' : ''
+
   return (
     <div className="report-editor">
       <div className="report-hero">
@@ -176,6 +281,28 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
             <p className="report-hero-description">
               이번 주 프로젝트 진행상황, 일정, 협업 메모를 한 화면에서 정리했습니다.
             </p>
+            {generatedSummary && (
+              <div className="report-generated-summary">
+                <div className="report-generated-summary-head">
+                  <span className="report-generated-summary-kicker">Generated Summary</span>
+                  {generatedSummary.previous_week_start && (
+                    <span className="report-generated-summary-meta">
+                      지난 주 비교: {generatedSummary.previous_week_start}
+                    </span>
+                  )}
+                </div>
+                <p className="report-generated-summary-body">{renderSummaryText(generatedSummary.summary)}</p>
+                {generatedSummary.highlights.length > 0 && (
+                  <div className="report-generated-summary-highlights">
+                    {generatedSummary.highlights.map((item, index) => (
+                      <div key={`${item}-${index}`} className="report-generated-summary-item">
+                        {renderSummaryText(item)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="report-stats">
@@ -192,6 +319,15 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
           <button className="btn btn-secondary" onClick={handleExportWord} disabled={exporting}>
             {exporting ? 'Word 생성 중...' : 'Export to Word'}
           </button>
+          <span title={summaryButtonTitle}>
+            <button
+              className="btn btn-secondary"
+              onClick={handleGenerateSummary}
+              disabled={generatingSummary || llmUnavailable}
+            >
+              {generatingSummary ? 'Summary 생성 중...' : 'Generate Summary'}
+            </button>
+          </span>
           {canEdit && (report.status_id === 1 || report.status_id === 4) && (
             submitConfirm ? (
               <div className="submit-confirm">
@@ -258,6 +394,7 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
                           readOnly={!canEdit}
                           onRefresh={onRefresh}
                           onDirtyChange={(dirty) => (dirty ? setDirty(project.project_id) : clearDirty(project.project_id))}
+                          onOpenIssueDetail={setSelectedIssue}
                         />
                       ))}
                     </div>
@@ -299,6 +436,7 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
       </div>
 
       <CommentsSection reportId={report.id} comments={report.comments} onAdded={onRefresh} />
+      {selectedIssue && <IssueDetailModal issue={selectedIssue} onClose={() => setSelectedIssue(null)} />}
     </div>
   )
 }
@@ -384,12 +522,14 @@ function ProjectCard({
   readOnly,
   onRefresh,
   onDirtyChange,
+  onOpenIssueDetail,
 }: {
   rp: ReportProject
   reportId: number
   readOnly: boolean
   onRefresh: () => void
   onDirtyChange: (dirty: boolean) => void
+  onOpenIssueDetail: (issue: ReportProject['issue_items'][number]) => void
 }) {
   const navigate = useNavigate()
   const { toast } = useToast()
@@ -584,7 +724,7 @@ function ProjectCard({
                     ) : (
                       <div className="report-issue-list">
                         {rp.issue_items.map((issue) => (
-                          <ReportIssueCard key={issue.id} issue={issue} />
+                          <ReportIssueCard key={issue.id} issue={issue} onOpenDetail={onOpenIssueDetail} />
                         ))}
                       </div>
                     )}
@@ -1123,16 +1263,89 @@ function formatRange(start: string, end?: string | null) {
   return end && end !== start ? `${shortDate(start)} ~ ${shortDate(end)}` : shortDate(start)
 }
 
-function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number] }) {
-  const [expanded, setExpanded] = useState(true)
-  const [detailOpen, setDetailOpen] = useState(false)
+function IssueDetailModal({
+  issue,
+  onClose,
+}: {
+  issue: ReportProject['issue_items'][number]
+  onClose: () => void
+}) {
   const priorityKey = issue.priority ?? 'high'
   const statusChip = ISSUE_STATUS_CHIP[issue.status] ?? 'chip-draft'
   const fullHistory = issue.full_issue_progresses ?? issue.issue_progresses
+  const currentWeekProgressIds = new Set(issue.issue_progresses.map((progress) => progress.id))
 
   return (
-    <>
-      <div className="report-issue-card">
+    <Modal
+      title={issue.title}
+      onClose={onClose}
+      size="lg"
+      className="report-history-modal"
+      footer={<button className="btn btn-ghost" onClick={onClose}>닫기</button>}
+    >
+      <div style={{ display: 'grid', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className={`chip ${PRIORITY_CHIP[priorityKey] ?? 'chip-on_hold'}`}>{PRIORITY_LABEL[priorityKey] ?? '중요'}</span>
+          <span className={`chip ${statusChip}`}>{issue.status}</span>
+          <span className="text-sm text-muted">{issue.start_date}{issue.end_date ? ` ~ ${issue.end_date}` : ''}</span>
+        </div>
+
+        <div>
+          <div className="subsection-title" style={{ marginBottom: 6 }}>이슈 상세</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>
+            {issue.details || '등록된 상세 내용이 없습니다.'}
+          </div>
+        </div>
+
+        <div>
+          <div className="subsection-title" style={{ marginBottom: 8 }}>전체 히스토리</div>
+          {fullHistory.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--ink-5)' }}>등록된 진행 히스토리가 없습니다.</div>
+          ) : (
+            <div className="report-history-timeline">
+              {fullHistory.map((progress) => {
+                const isCurrentWeek = currentWeekProgressIds.has(progress.id)
+                return (
+                  <div key={progress.id} className={`report-history-item ${isCurrentWeek ? 'is-current-week' : ''}`}>
+                    <div className="report-history-rail">
+                      <span className="report-history-dot" />
+                    </div>
+                    <div className="report-history-content">
+                      <div className="report-history-date">
+                        {progress.start_date}
+                        {progress.end_date && progress.end_date !== progress.start_date ? ` ~ ${progress.end_date}` : ''}
+                      </div>
+                      <div className="report-history-card">
+                        {isCurrentWeek && <div className="report-history-badge">이번 주 진행</div>}
+                        <strong className="report-history-title">{progress.title}</strong>
+                        {progress.details && <div className="report-history-detail">{progress.details}</div>}
+                        {progress.author_name && <div className="report-history-author">{progress.author_name}</div>}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function ReportIssueCard({
+  issue,
+  onOpenDetail,
+}: {
+  issue: ReportProject['issue_items'][number]
+  onOpenDetail: (issue: ReportProject['issue_items'][number]) => void
+}) {
+  const [expanded, setExpanded] = useState(true)
+  const priorityKey = issue.priority ?? 'high'
+  const statusChip = ISSUE_STATUS_CHIP[issue.status] ?? 'chip-draft'
+
+  return (
+    <div className="report-issue-card" id={`report-issue-${issue.id}`}>
       <div className="report-issue-row">
         <button
           className="report-issue-toggle"
@@ -1166,7 +1379,7 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
       <div className={`report-issue-progress-collapse ${expanded ? 'is-expanded' : ''}`}>
         <button
           type="button"
-          onClick={() => setDetailOpen(true)}
+          onClick={() => onOpenDetail(issue)}
           className="report-issue-hitarea report-issue-progress-hitarea"
           style={{ cursor: 'pointer', textAlign: 'left' }}
         >
@@ -1186,60 +1399,6 @@ function ReportIssueCard({ issue }: { issue: ReportProject['issue_items'][number
           ))}
         </button>
       </div>
-      </div>
-
-      {detailOpen && (
-        <Modal
-          title={issue.title}
-          onClose={() => setDetailOpen(false)}
-          size="lg"
-          className="report-history-modal"
-          footer={<button className="btn btn-ghost" onClick={() => setDetailOpen(false)}>닫기</button>}
-        >
-          <div style={{ display: 'grid', gap: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span className={`chip ${PRIORITY_CHIP[priorityKey] ?? 'chip-on_hold'}`}>{PRIORITY_LABEL[priorityKey] ?? '중요'}</span>
-              <span className={`chip ${statusChip}`}>{issue.status}</span>
-              <span className="text-sm text-muted">{issue.start_date}{issue.end_date ? ` ~ ${issue.end_date}` : ''}</span>
-            </div>
-
-            <div>
-              <div className="subsection-title" style={{ marginBottom: 6 }}>이슈 상세</div>
-              <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>
-                {issue.details || '등록된 상세 내용이 없습니다.'}
-              </div>
-            </div>
-
-            <div>
-              <div className="subsection-title" style={{ marginBottom: 8 }}>전체 히스토리</div>
-              {fullHistory.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--ink-5)' }}>등록된 진행 히스토리가 없습니다.</div>
-              ) : (
-                <div className="report-history-timeline">
-                  {fullHistory.map((progress) => (
-                    <div key={progress.id} className="report-history-item">
-                      <div className="report-history-rail">
-                        <span className="report-history-dot" />
-                      </div>
-                      <div className="report-history-content">
-                        <div className="report-history-date">
-                          {progress.start_date}
-                          {progress.end_date && progress.end_date !== progress.start_date ? ` ~ ${progress.end_date}` : ''}
-                        </div>
-                        <div className="report-history-card">
-                          <strong className="report-history-title">{progress.title}</strong>
-                          {progress.details && <div className="report-history-detail">{progress.details}</div>}
-                          {progress.author_name && <div className="report-history-author">{progress.author_name}</div>}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </Modal>
-      )}
-    </>
+    </div>
   )
 }
