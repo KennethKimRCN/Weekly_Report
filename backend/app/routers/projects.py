@@ -379,7 +379,10 @@ def list_projects(
     mine: Optional[bool] = None,
     current_user=Depends(get_current_user),
 ):
-    query = """SELECT p.*, d.name as dept_name
+    query = """SELECT p.*, d.name as dept_name,
+                      (SELECT COUNT(*) FROM project_issues pi
+                       WHERE pi.project_id=p.id AND pi.is_deleted=0
+                         AND pi.status NOT IN ('완료','취소')) AS open_issue_count
                FROM projects p
                LEFT JOIN departments d ON d.id=p.department_id
                WHERE p.is_deleted=0"""

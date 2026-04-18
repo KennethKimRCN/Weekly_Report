@@ -342,7 +342,9 @@ def generate_report_summary(report_id: int, current_user=Depends(get_current_use
             "previous_week_start": fallback["previous_week_start"],
         }
     except (error.URLError, error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
-        if not _is_e2b_model(settings["model"]):
+        if _is_e2b_model(settings["model"]):
+            pass  # fall through to e2b retry with single-user-message format
+        else:
             return fallback
 
     try:

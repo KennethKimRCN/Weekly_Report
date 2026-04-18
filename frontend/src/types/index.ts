@@ -180,6 +180,7 @@ export interface Project {
   end_date: string | null
   dept_name: string | null
   assignees: Assignee[]
+  open_issue_count?: number
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────

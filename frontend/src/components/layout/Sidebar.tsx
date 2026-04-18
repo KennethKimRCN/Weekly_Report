@@ -132,9 +132,28 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                   style={{ paddingLeft: 36 }}
                 >
                   <DotIcon />
-                  <span className="nav-label" style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span className="nav-label" style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                     {project.project_name}
                   </span>
+                  {(project.open_issue_count ?? 0) > 0 && (
+                    <span style={{
+                      flexShrink: 0,
+                      marginLeft: 4,
+                      height: 16,
+                      borderRadius: 4,
+                      background: 'var(--ink-2, rgba(0,0,0,0.12))',
+                      color: 'var(--ink-5, #888)',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0 5px',
+                      lineHeight: 1,
+                    }}>
+                      {project.open_issue_count}
+                    </span>
+                  )}
                 </button>
               )
             })}
