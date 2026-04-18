@@ -147,6 +147,20 @@ export interface LlmStatus {
   error: string | null
 }
 
+export interface LlmSettings {
+  id: number
+  base_url: string
+  model: string
+  timeout_seconds: number
+  system_prompt: string
+  updated_at: string | null
+  updated_by: number | null
+}
+
+export interface LlmModelList {
+  models: string[]
+}
+
 // ── Projects ──────────────────────────────────────────────────────────────
 export interface Assignee {
   id: number

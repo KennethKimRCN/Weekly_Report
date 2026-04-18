@@ -22,4 +22,5 @@ export const PAGE_TITLES: Record<string, string> = {
   '/projects':     '프로젝트',
   '/analytics':    '분석',
   '/members':      '팀원',
+  '/admin/llm-settings': 'LLM Settings',
 }

@@ -18,6 +18,10 @@ const NAV_MANAGE = [
   { path: '/members',   label: '팀원',     icon: UsersIcon },
 ]
 
+const NAV_ADMIN = [
+  { path: '/admin/llm-settings', label: 'LLM Settings', icon: SparkIcon },
+]
+
 interface SidebarProps {
   mobileOpen?: boolean
   onMobileClose?: () => void
@@ -152,6 +156,24 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
               </button>
             ))}
           </div>
+
+          {user?.is_admin === 1 && (
+            <div>
+              <div className="nav-section-label">Admin</div>
+              {NAV_ADMIN.map(({ path, label, icon: Icon }) => (
+                <button
+                  key={path}
+                  className={`nav-item ${location.pathname === path ? 'active' : ''}`}
+                  onClick={() => handleNav(path)}
+                  title={sidebarOpen ? undefined : label}
+                  aria-current={location.pathname === path ? 'page' : undefined}
+                >
+                  <Icon />
+                  <span className="nav-label">{label}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </nav>
 
         <div className="sidebar-footer">
@@ -247,6 +269,14 @@ function UsersIcon() {
   return (
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+    </svg>
+  )
+}
+function SparkIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/>
+      <path d="M19 16l.9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9L19 16z"/>
     </svg>
   )
 }

@@ -50,6 +50,7 @@ If rejected, the engineer receives a notification with the manager's comment and
 | State | Zustand |
 | Routing | React Router v6 |
 | Date utils | `isoweek` (Python), custom hooks (frontend) |
+| Local LLM | LM Studio OpenAI-compatible API (`/v1`) |
 
 No ORM is used. All SQL is written by hand against a context-managed SQLite connection with `dict_factory` row mapping.
 
@@ -193,6 +194,9 @@ All configuration is via environment variables with sensible defaults for local 
 |---|---|---|
 | `SECRET_KEY` | `yokogawa-weekly-report-secret-key-2025-change-in-prod` | JWT signing secret. **Must be changed in production.** |
 | `WEEKLY_REPORT_DB` | `backend/weekly_report.db` | Absolute or relative path to the SQLite database file. |
+| `LLM_BASE_URL` | `http://127.0.0.1:1234/v1` | Default LM Studio-compatible API base URL used to seed admin LLM settings. |
+| `LLM_MODEL` | `google/gemma-4-31b:2` | Default model name used to seed admin LLM settings on first startup. |
+| `LLM_TIMEOUT_SECONDS` | `90` | Default timeout used to seed admin LLM settings on first startup. |
 
 Set them in your shell, a `.env` file (with `python-dotenv` if added), or your deployment environment:
 
@@ -225,6 +229,7 @@ SQLite with WAL journal mode and foreign key enforcement enabled on every connec
 | `notifications` | Fan-out notification rows per user (submit, approve, reject, mention, blocker). |
 | `personal_schedule` | Individual out-of-office / travel / training entries shown on the calendar. |
 | `project_milestones` | Persistent project-level milestones (not per-report). |
+| `llm_settings` | Admin-managed LM Studio settings: `base_url`, `model`, `timeout_seconds`, and editable `system_prompt`. |
 | `report_summaries` | Materialised view-like table: cached `total_projects`, `risk_count`, `blocker_count`, `avg_completion` per report. Updated on save. |
 | `report_search` | SQLite FTS5 virtual table for full-text search across report content. |
 
@@ -300,6 +305,16 @@ All endpoints require a `Bearer` token except `POST /api/auth/token`.
 | `POST` | `/api/notifications/read-all` | Mark all notifications as read. |
 | `PATCH` | `/api/notifications/{id}/read` | Mark one notification as read. |
 
+### LLM
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/llm/status` | Check whether the currently configured LM Studio endpoint is reachable. |
+| `POST` | `/api/llm/reports/{report_id}/summary` | Generate a weekly comparison summary for a report using the configured local LLM. |
+| `GET` | `/api/llm/settings` | Read saved LLM settings (admin only). |
+| `PUT` | `/api/llm/settings` | Update `base_url`, `model`, `timeout_seconds`, and `system_prompt` (admin only). |
+| `GET` | `/api/llm/models` | Fetch available models from the configured LM Studio endpoint (admin only). |
+
 ### Analytics & Lookups
 
 | Method | Path | Description |
@@ -349,6 +364,22 @@ The carry-forward feature (`/api/reports/carry-forward`) copies the previous wee
 
 Separate from weekly reports, each project has a **persistent record** (`/api/projects/{id}/record`) that aggregates: all-time milestone table, risk level history log, and a chronological list of all report entries across weeks. This gives a project-level view independent of who was reporting in a given week.
 
+### Local LLM Summaries
+
+The **My Report** page includes a `Generate Summary` action that compares the current report against the previous week's report and asks a locally hosted LLM in LM Studio to produce a Korean summary plus highlights.
+
+Admins can configure the LLM from **Admin -> LLM Settings** in the sidebar:
+- Set the LM Studio base URL
+- Load the available models from `/v1/models` into a dropdown
+- Choose the active model
+- Adjust timeout
+- Edit the system prompt used for weekly summary generation
+
+Important notes:
+- Use the exact model ID returned by LM Studio's `/models` response.
+- Some smaller models may be more sensitive to chat formatting; the backend includes a simplified retry path for `google/gemma-4-e2b`.
+- If the LLM call fails, the app falls back to a deterministic non-LLM summary instead of breaking the report page.
+
 ---
 
 ## Roles & Permissions
@@ -364,6 +395,7 @@ Separate from weekly reports, each project has a **persistent record** (`/api/pr
 | Edit other users | ❌ | ✅ |
 | Reset user passwords | ❌ | ✅ |
 | View analytics | ✅ | ✅ |
+| Configure LLM settings | ❌ | ✅ |
 
 ---
 

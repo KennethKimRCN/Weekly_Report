@@ -2,7 +2,7 @@ import axios from 'axios'
 import type {
   LoginResponse, User, ReportSummary, ReportFull, ReportProject,
   Project, Notification, DashboardData, LookupData, AnalyticsData,
-  SearchResult, ScheduleEntry, Comment, GeneratedReportSummary, LlmStatus,
+  SearchResult, ScheduleEntry, Comment, GeneratedReportSummary, LlmStatus, LlmSettings, LlmModelList,
 } from '../types'
 
 // ── Axios instance ────────────────────────────────────────────────────────
@@ -283,4 +283,9 @@ export const analyticsApi = {
 
 export const llmApi = {
   status: () => http.get<LlmStatus>('/llm/status'),
+  getSettings: () => http.get<LlmSettings>('/llm/settings'),
+  getModels: (params?: { base_url?: string; timeout_seconds?: number }) =>
+    http.get<LlmModelList>('/llm/models', { params }),
+  updateSettings: (data: { base_url: string; model: string; timeout_seconds: number; system_prompt: string }) =>
+    http.put<LlmSettings>('/llm/settings', data),
 }

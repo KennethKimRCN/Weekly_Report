@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 from .session import get_db
-from ..core.config import sunday_of_week
+from ..core.config import LLM_BASE_URL, LLM_MODEL, LLM_TIMEOUT_SECONDS, sunday_of_week
 
 REPORT_BACKFILL_START = date(2025, 4, 1)
 
@@ -316,6 +316,16 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS llm_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            base_url TEXT NOT NULL,
+            model TEXT NOT NULL,
+            timeout_seconds REAL NOT NULL DEFAULT 90,
+            system_prompt TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_by INTEGER,
+            FOREIGN KEY (updated_by) REFERENCES users(id)
+        );
         CREATE TABLE IF NOT EXISTS personal_schedule (
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, type_id INTEGER NOT NULL,
             start_date TEXT NOT NULL CHECK (start_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
@@ -515,6 +525,12 @@ def init_db():
         )
         conn.execute("DELETE FROM report_search WHERE source_type='progress'")
 
+        llm_setting_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(llm_settings)").fetchall()
+        }
+        if "system_prompt" not in llm_setting_columns:
+            conn.execute("ALTER TABLE llm_settings ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''")
+
         # Seeds
         if conn.execute("SELECT COUNT(*) FROM ranks").fetchone()["COUNT(*)"] == 0:
             conn.executemany("INSERT INTO ranks(name,sort_order) VALUES(?,?)",
@@ -530,6 +546,32 @@ def init_db():
 
         if conn.execute("SELECT COUNT(*) FROM departments").fetchone()["COUNT(*)"] == 0:
             conn.execute("INSERT INTO departments(id,name,code) VALUES(1,'Solution & Consulting','SCS')")
+
+        if conn.execute("SELECT COUNT(*) FROM llm_settings").fetchone()["COUNT(*)"] == 0:
+            conn.execute(
+                "INSERT INTO llm_settings(id, base_url, model, timeout_seconds, system_prompt) VALUES(1, ?, ?, ?, ?)",
+                (
+                    LLM_BASE_URL,
+                    LLM_MODEL,
+                    LLM_TIMEOUT_SECONDS,
+                    "You are an assistant that writes concise Korean weekly project summaries for an internal report. "
+                    "Compare the current week against the previous week, focus on issue movement, meaningful progress, "
+                    "newly added work, and items that still need attention. When you mention a current-week issue, use its exact issue title verbatim so the UI can link it. "
+                    'Return only valid JSON with this exact shape: {"summary":"2-4 sentence Korean summary","highlights":["bullet 1","bullet 2","bullet 3"]}.',
+                ),
+            )
+        else:
+            conn.execute(
+                """UPDATE llm_settings
+                   SET system_prompt=?
+                   WHERE id=1 AND (system_prompt IS NULL OR TRIM(system_prompt)='')""",
+                (
+                    "You are an assistant that writes concise Korean weekly project summaries for an internal report. "
+                    "Compare the current week against the previous week, focus on issue movement, meaningful progress, "
+                    "newly added work, and items that still need attention. When you mention a current-week issue, use its exact issue title verbatim so the UI can link it. "
+                    'Return only valid JSON with this exact shape: {"summary":"2-4 sentence Korean summary","highlights":["bullet 1","bullet 2","bullet 3"]}.',
+                ),
+            )
 
         if conn.execute("SELECT COUNT(*) FROM users").fetchone()["COUNT(*)"] == 0:
             from passlib.context import CryptContext

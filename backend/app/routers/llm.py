@@ -1,30 +1,74 @@
 import json
+from typing import Optional
 from urllib import error, request
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from ..core.config import LLM_BASE_URL, LLM_MODEL, LLM_TIMEOUT_SECONDS
-from ..core.deps import get_current_user
+from ..core.deps import get_current_user, require_admin
 from ..db.session import get_db
 from .reports import _full_report
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
 
+DEFAULT_SYSTEM_PROMPT = (
+    "You are an assistant that writes concise Korean weekly project summaries for an internal report. "
+    "Compare the current week against the previous week, focus on issue movement, meaningful progress, "
+    "newly added work, and items that still need attention. When you mention a current-week issue, use its exact issue title verbatim so the UI can link it. "
+    'Return only valid JSON with this exact shape: {"summary":"2-4 sentence Korean summary","highlights":["bullet 1","bullet 2","bullet 3"]}.'
+)
 
-def _check_llm_available() -> tuple[bool, str | None]:
+
+class LlmSettingsUpdate(BaseModel):
+    base_url: str
+    model: str
+    timeout_seconds: float
+    system_prompt: str
+
+
+def _get_llm_settings(conn) -> dict:
+    row = conn.execute(
+        "SELECT id, base_url, model, timeout_seconds, system_prompt, updated_at, updated_by FROM llm_settings WHERE id=1"
+    ).fetchone()
+    if row:
+        return dict(row)
+    return {
+        "id": 1,
+        "base_url": LLM_BASE_URL,
+        "model": LLM_MODEL,
+        "timeout_seconds": LLM_TIMEOUT_SECONDS,
+        "system_prompt": DEFAULT_SYSTEM_PROMPT,
+        "updated_at": None,
+        "updated_by": None,
+    }
+
+
+def _fetch_models(settings: dict) -> list[str]:
     req = request.Request(
-        f"{LLM_BASE_URL.rstrip('/')}/models",
+        f"{settings['base_url'].rstrip('/')}/models",
         headers={"Content-Type": "application/json"},
         method="GET",
     )
+    with request.urlopen(req, timeout=min(10, float(settings["timeout_seconds"]))) as response:
+        raw = response.read().decode("utf-8")
+    data = json.loads(raw)
+    if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+        raise ValueError("Invalid model list response.")
+    models: list[str] = []
+    for item in data["data"]:
+        if isinstance(item, dict):
+            model_id = item.get("id")
+            if isinstance(model_id, str) and model_id.strip():
+                models.append(model_id.strip())
+    return sorted(set(models), key=str.lower)
+
+
+def _check_llm_available(settings: dict) -> tuple[bool, str | None]:
     try:
-        with request.urlopen(req, timeout=min(10, LLM_TIMEOUT_SECONDS)) as response:
-            raw = response.read().decode("utf-8")
-        data = json.loads(raw)
-        if isinstance(data, dict) and isinstance(data.get("data"), list):
-            return True, None
-        return False, "Invalid model list response."
-    except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+        _fetch_models(settings)
+        return True, None
+    except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
         return False, str(exc)
 
 
@@ -125,13 +169,70 @@ def _build_fallback_summary(current_report: dict, previous_report: dict | None) 
 
 @router.get("/status")
 def llm_status(current_user=Depends(get_current_user)):
-    available, error_message = _check_llm_available()
+    with get_db() as conn:
+        settings = _get_llm_settings(conn)
+    available, error_message = _check_llm_available(settings)
     return {
         "available": available,
-        "model": LLM_MODEL if available else None,
-        "base_url": LLM_BASE_URL,
+        "model": settings["model"] if available else settings["model"],
+        "base_url": settings["base_url"],
         "error": error_message,
     }
+
+
+@router.get("/settings")
+def get_llm_settings(current_user=Depends(require_admin)):
+    with get_db() as conn:
+        return _get_llm_settings(conn)
+
+
+@router.get("/models")
+def get_llm_models(
+    base_url: Optional[str] = Query(default=None),
+    timeout_seconds: Optional[float] = Query(default=None),
+    current_user=Depends(require_admin),
+):
+    with get_db() as conn:
+        settings = _get_llm_settings(conn)
+    if base_url is not None and base_url.strip():
+        settings["base_url"] = base_url.strip()
+    if timeout_seconds is not None:
+        settings["timeout_seconds"] = timeout_seconds
+    try:
+        return {"models": _fetch_models(settings)}
+    except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(502, str(exc))
+
+
+@router.put("/settings")
+def update_llm_settings(body: LlmSettingsUpdate, current_user=Depends(require_admin)):
+    base_url = body.base_url.strip()
+    model = body.model.strip()
+    timeout_seconds = float(body.timeout_seconds)
+    system_prompt = body.system_prompt.strip()
+    if not base_url:
+        raise HTTPException(400, "base_url is required.")
+    if not model:
+        raise HTTPException(400, "model is required.")
+    if timeout_seconds <= 0:
+        raise HTTPException(400, "timeout_seconds must be greater than 0.")
+    if not system_prompt:
+        raise HTTPException(400, "system_prompt is required.")
+
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO llm_settings(id, base_url, model, timeout_seconds, system_prompt, updated_by)
+               VALUES(1, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                   base_url=excluded.base_url,
+                   model=excluded.model,
+                   timeout_seconds=excluded.timeout_seconds,
+                   system_prompt=excluded.system_prompt,
+                   updated_at=CURRENT_TIMESTAMP,
+                   updated_by=excluded.updated_by""",
+            (base_url, model, timeout_seconds, system_prompt, current_user["id"]),
+        )
+        return _get_llm_settings(conn)
 
 
 def _extract_json_block(content: str) -> dict:
@@ -147,15 +248,15 @@ def _extract_json_block(content: str) -> dict:
     return json.loads(text[start : end + 1])
 
 
-def _call_llm(payload: dict) -> dict:
+def _call_llm(payload: dict, settings: dict) -> dict:
     body = json.dumps(payload).encode("utf-8")
     req = request.Request(
-        f"{LLM_BASE_URL.rstrip('/')}/chat/completions",
+        f"{settings['base_url'].rstrip('/')}/chat/completions",
         data=body,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with request.urlopen(req, timeout=LLM_TIMEOUT_SECONDS) as response:
+    with request.urlopen(req, timeout=float(settings["timeout_seconds"])) as response:
         raw = response.read().decode("utf-8")
     data = json.loads(raw)
     choices = data.get("choices") or []
@@ -177,13 +278,19 @@ def _call_llm(payload: dict) -> dict:
         "summary": summary,
         "highlights": clean_highlights,
         "source": "llm",
-        "model": data.get("model") or LLM_MODEL,
+        "model": data.get("model") or settings["model"],
     }
+
+
+def _is_e2b_model(model_name: str) -> bool:
+    normalized = model_name.strip().lower()
+    return "gemma-4-e2b" in normalized
 
 
 @router.post("/reports/{report_id}/summary")
 def generate_report_summary(report_id: int, current_user=Depends(get_current_user)):
     with get_db() as conn:
+        settings = _get_llm_settings(conn)
         report_row = conn.execute(
             "SELECT id, owner_id, week_start FROM reports WHERE id=? AND is_deleted=0",
             (report_id,),
@@ -212,13 +319,7 @@ def generate_report_summary(report_id: int, current_user=Depends(get_current_use
         "previous_projects": _project_snapshot(previous_report) if previous_report else [],
     }
 
-    system_prompt = (
-        "You are an assistant that writes concise Korean weekly project summaries for an internal report. "
-        "Compare the current week against the previous week, focus on issue movement, meaningful progress, "
-        "newly added work, and items that still need attention. When you mention a current-week issue, use its exact issue title verbatim so the UI can link it. "
-        "Return only valid JSON with this exact shape: "
-        '{"summary":"2-4 sentence Korean summary","highlights":["bullet 1","bullet 2","bullet 3"]}.'
-    )
+    system_prompt = settings.get("system_prompt") or DEFAULT_SYSTEM_PROMPT
     user_prompt = (
         "현재 주차와 지난 주차 프로젝트 이슈 및 진행내역을 비교해 주세요. "
         "문장은 자연스러운 한국어로 작성하고, 과장 없이 사실 기반으로 요약하세요.\n\n"
@@ -227,16 +328,42 @@ def generate_report_summary(report_id: int, current_user=Depends(get_current_use
 
     fallback = _build_fallback_summary(current_report, previous_report)
     try:
-        llm_result = _call_llm(
-            {
-                "model": LLM_MODEL,
-                "temperature": 0.2,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            }
-        )
+        primary_payload = {
+            "model": settings["model"],
+            "temperature": 0.2,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        llm_result = _call_llm(primary_payload, settings)
+        return {
+            **llm_result,
+            "previous_week_start": fallback["previous_week_start"],
+        }
+    except (error.URLError, error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
+        if not _is_e2b_model(settings["model"]):
+            return fallback
+
+    try:
+        retry_payload = {
+            "model": settings["model"],
+            "temperature": 0.0,
+            "top_p": 0.9,
+            "max_tokens": 500,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        f"{system_prompt}\n\n"
+                        "Below is the weekly report comparison data.\n"
+                        "Write the answer in Korean and return only valid JSON.\n\n"
+                        f"{user_prompt}"
+                    ),
+                }
+            ],
+        }
+        llm_result = _call_llm(retry_payload, settings)
         return {
             **llm_result,
             "previous_week_start": fallback["previous_week_start"],
