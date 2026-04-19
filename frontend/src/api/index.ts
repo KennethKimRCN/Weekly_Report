@@ -3,6 +3,7 @@ import type {
   LoginResponse, User, ReportSummary, ReportFull, ReportProject,
   Project, Notification, DashboardData, LookupData, AnalyticsData,
   SearchResult, ScheduleEntry, Comment, GeneratedReportSummary, LlmStatus, LlmSettings, LlmModelList,
+  WeeklyDiff,
 } from '../types'
 
 // ── Axios instance ────────────────────────────────────────────────────────
@@ -279,6 +280,8 @@ export interface CarryPreview {
 export const analyticsApi = {
   overview: (weeks = 8) =>
     http.get<AnalyticsData>('/analytics/team-overview', { params: { weeks } }),
+  weeklyDiff: (week?: string) =>
+    http.get<WeeklyDiff>('/analytics/weekly-diff', { params: week ? { week } : {} }),
 }
 
 export const llmApi = {

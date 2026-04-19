@@ -180,7 +180,6 @@ export interface Project {
   end_date: string | null
   dept_name: string | null
   assignees: Assignee[]
-  open_issue_count?: number
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────
@@ -254,7 +253,34 @@ export interface AnalyticsData {
   }[]
 }
 
-// ── Search ────────────────────────────────────────────────────────────────
+// ── Weekly Diff (Analytics) ───────────────────────────────────────────────
+export interface DiffField { prev: string | null; cur: string | null }
+export interface DiffSchedule { id: number; title: string; start_date: string; end_date: string | null }
+export interface DiffIssueProgress { id: number; title: string; start_date: string; end_date: string | null; details: string | null }
+export interface DiffIssue {
+  id: number; title: string; status: string; start_date: string; end_date: string | null; details: string | null
+  issue_progresses: DiffIssueProgress[]
+}
+export interface DiffIssueChanged {
+  title: string; status: string; start_date: string
+  changes: { status?: DiffField; details?: DiffField }
+  prog_added: DiffIssueProgress[]
+  prog_removed: DiffIssueProgress[]
+}
+export interface DiffProject {
+  project_id: number; project_name: string; company: string; location: string
+  has_diff: boolean
+  remarks_diff: DiffField | null
+  sched_added: DiffSchedule[]; sched_removed: DiffSchedule[]
+  issues_added: DiffIssue[]; issues_removed: DiffIssue[]; issues_changed: DiffIssueChanged[]
+}
+export interface WeeklyDiff {
+  current_week: string | null; prev_week: string | null
+  projects: DiffProject[]
+  available_weeks: string[]
+}
+
+
 export interface SearchResult {
   report_id: number
   source_type: string
