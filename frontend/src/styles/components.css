@@ -697,67 +697,303 @@ tr.clickable:focus-visible td { background: var(--blue-light); }
 .text-danger { color: var(--red); font-weight: 500; font-size: 12px; }
 
 /* ── Login page ──────────────────────────────────────────────────────────── */
+/* ── Login ───────────────────────────────────────────────────────────────── */
 .login-wrap {
   position: fixed; inset: 0;
-  background:
-    radial-gradient(circle at top left, rgba(0, 84, 166, 0.18), transparent 38%),
-    linear-gradient(180deg, #f5f9fd 0%, #eef4fa 100%);
-  display: flex; align-items: center; justify-content: center;
-}
-.login-card {
-  width: 428px;
+  display: flex;
   background: var(--surface);
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  padding: 44px 38px;
-  box-shadow: var(--shadow-3);
 }
-.login-logo-wrap {
+
+/* left branding panel */
+.login-panel {
+  position: relative;
+  width: 460px;
+  flex-shrink: 0;
+  background: linear-gradient(160deg, var(--navy-800) 0%, var(--navy-900) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 48px 52px;
+}
+.login-panel-inner {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
+  gap: 0;
+}
+.login-panel-logo {
+  display: flex;
   align-items: center;
-  margin-bottom: 8px;
-}
-.login-logo-icon {
-  width: 52px; height: 52px;
-  background: linear-gradient(180deg, #f1f7fd 0%, #e8f1fb 100%);
-  border-radius: 4px;
-  border: 1px solid rgba(0, 84, 166, 0.12);
-  display: flex; align-items: center; justify-content: center;
-  margin-bottom: 12px;
-  color: var(--blue);
-}
-.login-logo {
-  font-family: 'Inter', sans-serif;
-  font-size: 24px; font-weight: 700;
-  color: var(--blue);
-  text-align: center;
+  gap: 10px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
   letter-spacing: -.02em;
+  margin-bottom: 52px;
+  opacity: 0.92;
 }
-.login-subtitle {
-  font-size: 13px; color: var(--ink-3);
-  text-align: center; margin-bottom: 32px;
-  margin-top: 6px;
+.login-panel-headline {
+  font-size: 30px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.3;
+  letter-spacing: -.02em;
+  margin-bottom: 14px;
+}
+.login-panel-sub {
+  font-size: 14px;
+  color: rgba(255,255,255,0.55);
+  line-height: 1.65;
+  margin-bottom: 44px;
+}
+.login-panel-features {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.login-panel-feature {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.7);
+}
+.login-panel-feature-icon {
+  width: 32px; height: 32px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+/* decorative circles */
+.login-panel-deco-1 {
+  position: absolute;
+  width: 340px; height: 340px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,209,0,0.08), transparent 70%);
+  bottom: -80px; right: -80px;
+  pointer-events: none;
+}
+.login-panel-deco-2 {
+  position: absolute;
+  width: 220px; height: 220px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.06);
+  top: 40px; right: -60px;
+  pointer-events: none;
+}
+
+/* right form side */
+.login-form-side {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  padding: 48px 40px;
+}
+.login-form-wrap {
+  width: 100%;
+  max-width: 360px;
+}
+.login-form-heading {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -.02em;
+  margin-bottom: 6px;
+}
+.login-form-sub {
+  font-size: 14px;
+  color: var(--ink-4);
+  margin-bottom: 32px;
+}
+.login-field {
+  margin-bottom: 12px;
+}
+.login-input {
+  width: 100%;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--surface);
+  transition: border-color .15s, box-shadow .15s;
+}
+.login-input::placeholder { color: var(--ink-5); }
+.login-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--blue-light);
+  outline: none;
+}
+.login-input--error {
+  border-color: var(--red);
+}
+.login-input--error:focus {
+  box-shadow: 0 0 0 3px var(--red-bg);
+}
+.login-error-slot {
+  min-height: 40px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: flex-start;
 }
 .login-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   background: var(--red-bg);
   border: 1px solid rgba(197, 59, 50, 0.18);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   color: var(--red);
   font-size: 13px;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-}
-.login-forgot {
-  font-size: 12px;
-  color: var(--blue);
-  text-align: right;
-  margin-top: -8px;
-  margin-bottom: 16px;
-  cursor: pointer;
-  background: none;
-  border: none;
-  padding: 0;
+  padding: 9px 12px;
   width: 100%;
 }
-.login-forgot:hover { text-decoration: underline; }
+.login-submit {
+  width: 100%;
+  height: 44px;
+  background: var(--blue);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, box-shadow .15s, transform .1s;
+  box-shadow: 0 2px 8px rgba(0, 84, 166, 0.25);
+  margin-top: 4px;
+}
+.login-submit:hover:not(:disabled) {
+  background: var(--blue-dark);
+  box-shadow: 0 4px 14px rgba(0, 84, 166, 0.32);
+  transform: translateY(-1px);
+}
+.login-submit:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(0, 84, 166, 0.2);
+}
+.login-submit:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.login-submit-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* ── Login animations ────────────────────────────────────────────────────── */
+@keyframes loginPanelIn {
+  from { opacity: 0; transform: translateX(-24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes loginFormIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes loginItemIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes loginSuccessPulse {
+  0%   { box-shadow: 0 2px 8px rgba(0, 84, 166, 0.25); }
+  50%  { box-shadow: 0 0 0 6px rgba(0, 84, 166, 0.15); }
+  100% { box-shadow: 0 2px 8px rgba(0, 84, 166, 0.25); }
+}
+@keyframes loginSuccessFill {
+  from { background: var(--blue); }
+  to   { background: var(--green); box-shadow: 0 2px 8px rgba(23, 114, 69, 0.3); }
+}
+
+.login-panel { animation: loginPanelIn .45s cubic-bezier(.22,.68,0,1.2) both; }
+.login-form-side { animation: loginFormIn .45s cubic-bezier(.22,.68,0,1.2) .08s both; }
+
+.login-form-heading {
+  animation: loginItemIn .35s ease .15s both;
+}
+.login-form-sub {
+  animation: loginItemIn .35s ease .22s both;
+}
+.login-field:nth-child(1) { animation: loginItemIn .35s ease .28s both; }
+.login-field:nth-child(2) { animation: loginItemIn .35s ease .34s both; }
+.login-error-slot         { animation: loginItemIn .35s ease .38s both; }
+.login-submit             { animation: loginItemIn .35s ease .42s both; }
+
+.login-submit--success {
+  animation: loginSuccessFill .3s ease forwards;
+  pointer-events: none;
+}
+.login-submit--loading {
+  animation: loginSuccessPulse .9s ease infinite;
+}
+
+/* ── View Transitions (login → dashboard morph) ───────────────────────────── */
+
+/* Root crossfade */
+::view-transition-old(root) {
+  animation: vtFadeOut 350ms cubic-bezier(.4,0,.2,1) both;
+}
+::view-transition-new(root) {
+  animation: vtFadeIn 350ms cubic-bezier(.4,0,.2,1) both;
+}
+
+/* Brand logo morphs from login panel → sidebar seamlessly */
+::view-transition-old(brand-logo) {
+  animation: vtLogoOut 400ms cubic-bezier(.4,0,.2,1) both;
+}
+::view-transition-new(brand-logo) {
+  animation: vtLogoIn 400ms cubic-bezier(.4,0,.2,1) both;
+}
+
+/* Login panel collapses leftward into the sidebar */
+::view-transition-old(login-panel) {
+  animation: vtPanelOut 420ms cubic-bezier(.4,0,.2,1) both;
+  transform-origin: left center;
+}
+::view-transition-new(login-panel) {
+  animation: none;
+}
+
+/* Form side expands to fill the viewport */
+::view-transition-old(login-form-side) {
+  animation: vtFormOut 380ms cubic-bezier(.4,0,.2,1) both;
+}
+::view-transition-new(login-form-side) {
+  animation: vtFormIn 420ms cubic-bezier(.4,0,.2,1) 40ms both;
+}
+
+@keyframes vtFadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@keyframes vtFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes vtLogoOut {
+  from { opacity: 1; transform: scale(1)    translateX(0); }
+  to   { opacity: 0; transform: scale(0.7)  translateX(-12px); }
+}
+@keyframes vtLogoIn {
+  from { opacity: 0; transform: scale(0.75) translateX(-8px); }
+  to   { opacity: 1; transform: scale(1)    translateX(0); }
+}
+@keyframes vtPanelOut {
+  from { opacity: 1; transform: scaleX(1)   translateX(0); }
+  to   { opacity: 0; transform: scaleX(0.3) translateX(-60px); }
+}
+@keyframes vtFormOut {
+  from { opacity: 1; transform: translateX(0)   scale(1); }
+  to   { opacity: 0; transform: translateX(32px) scale(1.03); }
+}
+@keyframes vtFormIn {
+  from { opacity: 0; transform: translateX(0) scale(0.97); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}

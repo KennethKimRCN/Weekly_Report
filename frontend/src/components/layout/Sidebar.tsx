@@ -72,7 +72,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           </button>
           <div className="sidebar-brand">
             <span className="sidebar-eyebrow">Digital Innovation Division</span>
-            <span className="sidebar-logo">WeeklyReport</span>
+            <span className="sidebar-logo" style={{ viewTransitionName: 'brand-logo' }}>WeeklyReport</span>
           </div>
         </div>
 

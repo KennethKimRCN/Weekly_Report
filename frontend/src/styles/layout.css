@@ -303,6 +303,12 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* suppress page-enter when a view transition is handling it */
+:root[data-view-transition] .page-enter,
+::view-transition-new(root) .page-enter {
+  animation: none;
+}
+
 /* ── Page header ─────────────────────────────────────────────────────────── */
 .page-header {
   display: flex;

@@ -717,3 +717,106 @@
   padding: 0; margin-left: 2px; transition: color .12s;
 }
 .iss-range-chip button:hover { color: var(--ink); }
+
+/* ── Issue Table View ─────────────────────────────────────────────────────── */
+.issue-table-wrap {
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+}
+.issue-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.issue-table-th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-3);
+  background: var(--surface-2);
+  border-bottom: 1.5px solid var(--border);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.issue-table-th:first-child { border-radius: 9px 0 0 0; }
+.issue-table-th:last-child  { border-radius: 0 9px 0 0; }
+.issue-table-th-action { width: 64px; }
+
+.issue-table-row {
+  cursor: pointer;
+  transition: background 0.12s;
+  border-bottom: 1px solid var(--border-2);
+}
+.issue-table-row:last-child { border-bottom: none; }
+.issue-table-row:hover { background: var(--surface-2); }
+.issue-table-row:focus { outline: none; background: var(--surface-2); }
+.issue-table-row-closed { opacity: 0.62; }
+
+.issue-table-td {
+  padding: 11px 14px;
+  vertical-align: middle;
+  color: var(--ink);
+}
+.issue-table-td-title {
+  min-width: 180px;
+  max-width: 340px;
+}
+.issue-table-td-date {
+  white-space: nowrap;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.issue-table-td-prog {
+  white-space: nowrap;
+}
+.issue-table-td-actions {
+  white-space: nowrap;
+  width: 64px;
+  text-align: right;
+  padding-right: 10px;
+}
+
+.issue-table-title {
+  display: block;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.4;
+}
+.issue-table-details {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-4);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 280px;
+}
+
+.issue-table-prog-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--blue);
+  font-weight: 500;
+}
+
+.issue-table-prog-snippets {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.issue-table-prog-snippet {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink-3);
+  background: var(--surface-2);
+  border-radius: 5px;
+  padding: 3px 7px;
+  border: 1px solid var(--border-2);
+}

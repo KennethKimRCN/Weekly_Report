@@ -43,7 +43,7 @@ export default function ProjectRecord() {
   const [record, setRecord] = useState<PR | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'issues' | 'milestones'>('issues')
-  const [issueView, setIssueView] = useState<'kanban' | 'timeline'>('kanban')
+  const [issueView, setIssueView] = useState<'table' | 'kanban' | 'timeline'>('table')
   const [issueSearch, setIssueSearch] = useState('')
   const [issueDateFrom, setIssueDateFrom] = useState('')
   const [issueDateTo, setIssueDateTo] = useState('')
@@ -266,11 +266,23 @@ export default function ProjectRecord() {
           <div className="panel-header">
             <div>
               <div className="panel-eyebrow">이슈 트래커</div>
-              <div className="panel-title">{issueView === 'kanban' ? '칸반 보드' : '타임라인'}</div>
+              <div className="panel-title">{issueView === 'kanban' ? '칸반 보드' : issueView === 'timeline' ? '타임라인' : '테이블'}</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {/* Kanban / Timeline toggle */}
               <div className="view-toggle">
+                <button
+                  className={`view-toggle-btn ${issueView === 'table' ? 'active' : ''}`}
+                  onClick={() => setIssueView('table')}
+                  title="테이블"
+                >
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    <rect x="1" y="2" width="14" height="12" rx="1.5" />
+                    <line x1="1" y1="6" x2="15" y2="6" />
+                    <line x1="5.5" y1="6" x2="5.5" y2="14" />
+                  </svg>
+                  테이블
+                </button>
                 <button
                   className={`view-toggle-btn ${issueView === 'kanban' ? 'active' : ''}`}
                   onClick={() => setIssueView('kanban')}
@@ -378,7 +390,16 @@ export default function ProjectRecord() {
               </div>
             </div>
 
-            {issueView === 'kanban' ? (
+            {issueView === 'table' ? (
+              <IssueTable
+                issueColumns={issueColumns}
+                hasIssueFilters={hasIssueFilters}
+                canEdit={canEdit}
+                onOpen={(issue) => setDetailIssue(issue)}
+                onEdit={(issue) => setIssueModal({ ...issue })}
+                onDelete={(id) => deleteIssue(id)}
+              />
+            ) : issueView === 'kanban' ? (
               <div className="kanban-board">
                 {issueColumns.map((column) => (
                   <section
@@ -707,6 +728,139 @@ function getThisWeekRange() {
     from: start.toISOString().slice(0, 10),
     to: end.toISOString().slice(0, 10),
   }
+}
+
+function IssueTable({
+  issueColumns,
+  hasIssueFilters,
+  canEdit,
+  onOpen,
+  onEdit,
+  onDelete,
+}: {
+  issueColumns: { status: string; issues: { issue: ProjectIssue; matchedProgresses: ProjectIssue['progresses']; isMatch: boolean }[] }[]
+  hasIssueFilters: boolean
+  canEdit: boolean
+  onOpen: (issue: ProjectIssue) => void
+  onEdit: (issue: ProjectIssue) => void
+  onDelete: (id: number) => void
+}) {
+  const allEntries = issueColumns.flatMap((col) => col.issues)
+
+  if (allEntries.length === 0) {
+    return <div className="kanban-empty" style={{ minHeight: 120 }}>등록된 이슈가 없습니다.</div>
+  }
+
+  return (
+    <div className="issue-table-wrap">
+      <table className="issue-table">
+        <thead>
+          <tr>
+            <th className="issue-table-th">제목</th>
+            <th className="issue-table-th">상태</th>
+            <th className="issue-table-th">우선순위</th>
+            <th className="issue-table-th">시작일</th>
+            <th className="issue-table-th">종료일</th>
+            <th className="issue-table-th">진행내역</th>
+            {canEdit && <th className="issue-table-th issue-table-th-action"></th>}
+          </tr>
+        </thead>
+        <tbody>
+          {allEntries.map(({ issue, matchedProgresses }) => {
+            const priority = PRIORITY_OPTIONS.find((o) => o.value === issue.priority) ?? PRIORITY_OPTIONS[0]
+            const statusMeta = ISSUE_STATUS_META[issue.status] ?? { chip: 'chip-draft' }
+            const isClosed = issue.status === '완료' || issue.status === '취소'
+            return (
+              <tr
+                key={issue.id}
+                className={`issue-table-row ${isClosed ? 'issue-table-row-closed' : ''}`}
+                onClick={() => onOpen(issue)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && onOpen(issue)}
+              >
+                <td className="issue-table-td issue-table-td-title">
+                  <span className="issue-table-title">{issue.title}</span>
+                  {issue.details && <span className="issue-table-details">{issue.details}</span>}
+                  {hasIssueFilters && matchedProgresses.length > 0 && (
+                    <div className="issue-table-prog-snippets">
+                      {matchedProgresses.slice(0, 2).map((p) => (
+                        <div key={p.id} className="issue-table-prog-snippet">
+                          <span className="icps-date">{p.start_date}{p.end_date && p.end_date !== p.start_date ? ` ~ ${p.end_date}` : ''}</span>
+                          <span className="icps-title">{p.title}</span>
+                        </div>
+                      ))}
+                      {matchedProgresses.length > 2 && <div className="icps-more">외 {matchedProgresses.length - 2}건 더 보기</div>}
+                    </div>
+                  )}
+                </td>
+                <td className="issue-table-td">
+                  <span className={`chip ${statusMeta.chip}`}>{issue.status}</span>
+                </td>
+                <td className="issue-table-td">
+                  <span className={`chip ${priority.chip}`}>{priority.label}</span>
+                </td>
+                <td className="issue-table-td issue-table-td-date">{issue.start_date}</td>
+                <td className="issue-table-td issue-table-td-date">{issue.end_date ?? <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
+                <td className="issue-table-td issue-table-td-prog">
+                  {issue.progresses.length > 0 ? (
+                    <span className="issue-table-prog-count">
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                        <circle cx="8" cy="8" r="6" /><polyline points="8 5 8 8 10.5 10" />
+                      </svg>
+                      {issue.progresses.length}
+                    </span>
+                  ) : <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                </td>
+                {canEdit && (
+                  <td className="issue-table-td issue-table-td-actions" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      className="issue-card-icon-btn"
+                      onClick={(e) => { e.stopPropagation(); onEdit(issue) }}
+                      title="편집"
+                      aria-label="이슈 편집"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13H3v-2L11.5 2.5z" />
+                      </svg>
+                    </button>
+                    <IssueTableDeleteBtn onDelete={() => onDelete(issue.id)} />
+                  </td>
+                )}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function IssueTableDeleteBtn({ onDelete }: { onDelete: () => void }) {
+  const [confirm, setConfirm] = useState(false)
+  if (confirm) {
+    return (
+      <>
+        <button className="issue-card-icon-btn issue-card-icon-btn--confirm" onClick={onDelete} title="삭제 확인">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="2.5 8 6 11.5 13.5 4" />
+          </svg>
+        </button>
+        <button className="issue-card-icon-btn" onClick={() => setConfirm(false)} title="취소">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <line x1="3" y1="3" x2="13" y2="13" /><line x1="13" y1="3" x2="3" y2="13" />
+          </svg>
+        </button>
+      </>
+    )
+  }
+  return (
+    <button className="issue-card-icon-btn issue-card-icon-btn--delete" onClick={() => setConfirm(true)} title="삭제">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <line x1="3" y1="3" x2="13" y2="13" /><line x1="13" y1="3" x2="3" y2="13" />
+      </svg>
+    </button>
+  )
 }
 
 function IssueCard({

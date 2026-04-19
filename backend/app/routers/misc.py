@@ -79,7 +79,7 @@ def available_weeks(current_user=Depends(get_current_user)):
     with get_db() as conn:
         rows = conn.execute(
             """SELECT DISTINCT week_start FROM reports
-               WHERE status_id >= 2 AND is_deleted=0
+               WHERE is_deleted=0
                ORDER BY week_start DESC"""
         ).fetchall()
         return {"weeks": [r["week_start"] for r in rows]}
@@ -93,7 +93,7 @@ def weekly_diff(week: str = None, current_user=Depends(get_current_user)):
     with get_db() as conn:
         all_weeks = conn.execute(
             """SELECT DISTINCT week_start FROM reports
-               WHERE status_id >= 2 AND is_deleted=0
+               WHERE is_deleted=0
                ORDER BY week_start DESC"""
         ).fetchall()
         week_list = [r["week_start"] for r in all_weeks]
@@ -119,7 +119,7 @@ def weekly_diff(week: str = None, current_user=Depends(get_current_user)):
                    FROM report_projects rp
                    JOIN reports r ON r.id=rp.report_id
                    JOIN projects p ON p.id=rp.project_id
-                   WHERE r.week_start=? AND r.status_id>=2 AND r.is_deleted=0""",
+                   WHERE r.week_start=? AND r.is_deleted=0""",
                 (week,),
             ).fetchall()
             result = {}

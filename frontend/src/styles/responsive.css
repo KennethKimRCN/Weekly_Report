@@ -72,6 +72,16 @@
 
 @media (max-width: 480px) {
   .week-nav-label { min-width: 120px; font-size: 12px; }
-  .login-card { width: 100%; margin: 0 16px; padding: 36px 24px; }
+  .login-wrap { flex-direction: column; }
+  .login-panel {
+    width: 100%; min-height: unset; padding: 32px 24px 28px;
+    flex-direction: row; justify-content: flex-start;
+  }
+  .login-panel-inner { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0; }
+  .login-panel-headline { font-size: 20px; margin-bottom: 0; }
+  .login-panel-sub, .login-panel-features { display: none; }
+  .login-panel-logo { margin-bottom: 0; margin-right: 20px; }
+  .login-form-side { padding: 32px 24px; }
+  .login-form-wrap { max-width: 100%; }
   .grid-2 { grid-template-columns: 1fr; }
 }
