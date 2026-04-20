@@ -9,6 +9,7 @@ from .users import router as users_router
 from .notifications import router as notifications_router
 from .misc import router as misc_router
 from .llm import router as llm_router
+from .teams import router as teams_router
 
 __all__ = [
     "auth_router",
@@ -22,4 +23,5 @@ __all__ = [
     "notifications_router",
     "misc_router",
     "llm_router",
+    "teams_router",
 ]

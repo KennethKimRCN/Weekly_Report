@@ -281,6 +281,34 @@ export interface WeeklyDiff {
 }
 
 
+// ── Teams ─────────────────────────────────────────────────────────────────
+export interface TeamMember {
+  user_id: number
+  team_id: number
+  name: string
+  rank_id: number
+  rank_name: string
+  role: string
+  primary_team: number
+}
+
+export interface Team {
+  id: number
+  name: string
+  department_id: number
+  department_name: string
+  parent_team_id: number | null
+  parent_team_name: string | null
+  manager_id: number | null
+  manager_name: string | null
+  members: TeamMember[]
+}
+
+export interface TeamsData {
+  teams: Team[]
+  departments: { id: number; name: string; code: string | null; parent_id: number | null }[]
+}
+
 export interface SearchResult {
   report_id: number
   source_type: string
