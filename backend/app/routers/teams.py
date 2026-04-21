@@ -22,14 +22,8 @@ class TeamUpdate(BaseModel):
     manager_id: Optional[int] = None
 
 
-class TeamMemberEntry(BaseModel):
-    user_id: int
-    role: str = "member"  # 'lead' | 'member' | 'observer'
-    primary_team: int = 0
-
-
 class TeamMemberUpdate(BaseModel):
-    members: list[TeamMemberEntry]
+    user_ids: list[int]
 
 
 @router.get("")
@@ -132,19 +126,16 @@ def update_team_members(team_id: int, body: TeamMemberUpdate, current_user=Depen
     if not current_user["is_admin"]:
         raise HTTPException(403, "관리자 권한이 필요합니다")
     with get_db() as conn:
-        conn.execute("DELETE FROM user_team_roles WHERE team_id=?", (team_id,))
-        for entry in body.members:
-            role = entry.role if entry.role in ("lead", "member", "observer") else "member"
-            conn.execute(
-                "INSERT OR IGNORE INTO user_team_roles(user_id,team_id,role,primary_team) VALUES(?,?,?,?)",
-                (entry.user_id, team_id, role, entry.primary_team),
-            )
-        # Keep teams.manager_id in sync with whoever has role='lead'
-        lead = next((e for e in body.members if e.role == "lead"), None)
+        # Remove members not in the new list
         conn.execute(
-            "UPDATE teams SET manager_id=? WHERE id=?",
-            (lead.user_id if lead else None, team_id),
+            "DELETE FROM user_team_roles WHERE team_id=?", (team_id,)
         )
+        for uid in body.user_ids:
+            conn.execute(
+                """INSERT OR IGNORE INTO user_team_roles(user_id, team_id, role, primary_team)
+                   VALUES(?, ?, 'member', 0)""",
+                (uid, team_id),
+            )
     return {"ok": True}
 
 
@@ -209,3 +200,31 @@ def delete_department(dept_id: int, current_user=Depends(get_current_user)):
             raise HTTPException(400, "이 부서에 속한 팀이 있어 삭제할 수 없습니다")
         conn.execute("UPDATE departments SET is_deleted=1 WHERE id=?", (dept_id,))
     return {"ok": True}
+
+
+@router.get("/{team_id}/members-recursive")
+def get_team_members_recursive(team_id: int, current_user=Depends(get_current_user)):
+    """Return all members of a team and all its sub-teams."""
+    with get_db() as conn:
+        def collect_team_ids(tid: int) -> list[int]:
+            ids = [tid]
+            children = conn.execute(
+                "SELECT id FROM teams WHERE parent_team_id=? AND is_deleted=0", (tid,)
+            ).fetchall()
+            for child in children:
+                ids.extend(collect_team_ids(child["id"]))
+            return ids
+
+        team_ids = collect_team_ids(team_id)
+        placeholders = ",".join("?" * len(team_ids))
+        members = conn.execute(
+            f"""SELECT DISTINCT u.id, u.name, u.rank_id, r.name as rank_name,
+                       utr.team_id, utr.role, utr.primary_team
+                FROM user_team_roles utr
+                JOIN users u ON u.id=utr.user_id AND u.is_deleted=0
+                JOIN ranks r ON r.id=u.rank_id
+                WHERE utr.team_id IN ({placeholders})
+                ORDER BY r.sort_order DESC, u.name""",
+            team_ids,
+        ).fetchall()
+        return [dict(m) for m in members]

@@ -36,7 +36,7 @@ export default function Members() {
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null)
 
   const [teamsData, setTeamsData]               = useState<TeamsData | null>(null)
-  const [teamsLoading, setTeamsLoading]         = useState(false)
+  const [teamsLoading, setTeamsLoading]         = useState(true)
   const [editingTeam, setEditingTeam]           = useState<Team | null>(null)
   const [addingTeam, setAddingTeam]             = useState(false)
   const [newTeam, setNewTeam]                   = useState(blankTeam())
@@ -62,15 +62,15 @@ export default function Members() {
     setLoading(false)
   }
 
-  async function loadTeams() {
-    setTeamsLoading(true)
+  async function loadTeams(silent = false) {
+    if (!silent) setTeamsLoading(true)
     const res = await teamsApi.list()
     setTeamsData(res.data)
     setTeamsLoading(false)
   }
 
   useEffect(() => { loadUsers(); loadTeams() }, [])
-  useEffect(() => { if (tab === 'teams' || tab === 'orgchart') loadTeams() }, [tab])
+  useEffect(() => { if (tab === 'teams' || tab === 'orgchart') loadTeams(true) }, [tab])
 
   const ranks    = lookups?.ranks ?? []
   const managers = users.filter((u) => editing ? u.id !== editing.id : true)
@@ -205,7 +205,7 @@ export default function Members() {
     } catch (e: any) { toast(e.response?.data?.detail ?? '오류', 'error') }
   }
 
-  if (loading) return <PageSpinner />
+  if (loading || teamsLoading) return <PageSpinner />
 
   const depts    = teamsData?.departments ?? lookups?.departments ?? []
   const allTeams = teamsData?.teams ?? []
@@ -325,7 +325,6 @@ export default function Members() {
 
       {/* ══ TAB: ORG CHART ══ */}
       {tab === 'orgchart' && (
-        teamsLoading ? <PageSpinner /> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {depts.map((dept) => {
               const deptRoots = rootTeams.filter((t) => t.department_id === dept.id)
@@ -350,12 +349,10 @@ export default function Members() {
               <div className="text-muted text-sm" style={{ textAlign: 'center', padding: 40 }}>팀이 없습니다.</div>
             )}
           </div>
-        )
       )}
 
       {/* ══ TAB: TEAMS (edit) ══ */}
       {tab === 'teams' && (
-        teamsLoading ? <PageSpinner /> : (
           <>
             <div className="card" style={{ padding: '16px 20px', marginBottom: 12 }}>
               <div className="fw-600" style={{ fontSize: 14, marginBottom: 12 }}>부서 목록</div>
@@ -428,7 +425,6 @@ export default function Members() {
               )}
             </div>
           </>
-        )
       )}
 
       {/* ══ MODALS ══ */}

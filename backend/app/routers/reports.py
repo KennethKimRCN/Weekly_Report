@@ -278,6 +278,7 @@ def list_reports(
     week_start: Optional[str] = None,
     owner_id: Optional[int] = None,
     status_id: Optional[int] = None,
+    team_id: Optional[int] = None,
     current_user=Depends(get_current_user),
 ):
     q = """SELECT r.*, u.name as owner_name, rs.name as status_name,
@@ -297,6 +298,30 @@ def list_reports(
         q += " AND r.owner_id=?"; params.append(owner_id)
     if status_id:
         q += " AND r.status_id=?"; params.append(status_id)
+    if team_id:
+        # Recursively collect all sub-team IDs, then filter by members
+        with get_db() as conn:
+            def collect_team_ids(tid: int) -> list[int]:
+                ids = [tid]
+                children = conn.execute(
+                    "SELECT id FROM teams WHERE parent_team_id=? AND is_deleted=0", (tid,)
+                ).fetchall()
+                for child in children:
+                    ids.extend(collect_team_ids(child["id"]))
+                return ids
+            team_ids = collect_team_ids(team_id)
+            placeholders = ",".join("?" * len(team_ids))
+            member_ids = [
+                row["user_id"] for row in conn.execute(
+                    f"SELECT DISTINCT user_id FROM user_team_roles WHERE team_id IN ({placeholders})",
+                    team_ids,
+                ).fetchall()
+            ]
+        if not member_ids:
+            return []
+        placeholders2 = ",".join("?" * len(member_ids))
+        q += f" AND r.owner_id IN ({placeholders2})"
+        params.extend(member_ids)
     q += " ORDER BY r.week_start DESC, u.name"
     with get_db() as conn:
         return conn.execute(q, params).fetchall()

@@ -63,7 +63,7 @@ export const dashboardApi = {
 
 // ── Reports ───────────────────────────────────────────────────────────────
 export const reportsApi = {
-  list: (params?: { week_start?: string; owner_id?: number; status_id?: number }) =>
+  list: (params?: { week_start?: string; owner_id?: number; status_id?: number; team_id?: number }) =>
     http.get<ReportSummary[]>('/reports', { params }),
 
   get: (id: number) => http.get<ReportFull>(`/reports/${id}`),
@@ -187,8 +187,11 @@ export const teamsApi = {
 
   delete: (id: number) => http.delete(`/teams/${id}`),
 
-  updateMembers: (id: number, members: { user_id: number; role: string; primary_team: number }[]) =>
-    http.put(`/teams/${id}/members`, { members }),
+  updateMembers: (id: number, user_ids: number[]) =>
+    http.put(`/teams/${id}/members`, { user_ids }),
+
+  getMembersRecursive: (id: number) =>
+    http.get<{ id: number; name: string; rank_name: string; team_id: number }[]>(`/teams/${id}/members-recursive`),
 }
 
 // ── Departments ───────────────────────────────────────────────────────────

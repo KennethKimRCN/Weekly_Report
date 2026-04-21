@@ -534,7 +534,7 @@ def init_db():
         # Seeds
         if conn.execute("SELECT COUNT(*) FROM ranks").fetchone()["COUNT(*)"] == 0:
             conn.executemany("INSERT INTO ranks(name,sort_order) VALUES(?,?)",
-                [("사원",1),("대리",2),("과장",3),("차장",4),("부장",5)])
+                [("사원",1),("대리",2),("과장",3),("차장",4),("부장",5),("부서장",6)])
 
         if conn.execute("SELECT COUNT(*) FROM report_status").fetchone()["COUNT(*)"] == 0:
             conn.executemany("INSERT INTO report_status(name,sort_order) VALUES(?,?)",
@@ -545,7 +545,7 @@ def init_db():
                 [("출장 (해외)",1),("출장 (국내)",2),("외근",3),("휴가",4),("휴일 출근",5)])
 
         if conn.execute("SELECT COUNT(*) FROM departments").fetchone()["COUNT(*)"] == 0:
-            conn.execute("INSERT INTO departments(id,name,code) VALUES(1,'Solution & Consulting','SCS')")
+            conn.execute("INSERT INTO departments(id,name,code) VALUES(1,'Advanced Solution Engineering Department','Adv.Sol.ENG.Dept')")
 
         if conn.execute("SELECT COUNT(*) FROM llm_settings").fetchone()["COUNT(*)"] == 0:
             conn.execute(
@@ -652,6 +652,7 @@ def init_db():
             conn.executemany("INSERT INTO tags(name) VALUES(?)",
                 [("#shutdown",),("#safety",),("#maintenance",),("#commissioning",),("#urgent",),("#fyi",)])
 
+"""
         if conn.execute("SELECT COUNT(*) FROM projects").fetchone()["COUNT(*)"] == 0:
             conn.executemany(
                 "INSERT INTO projects(project_name,wbs_number,company,location,status,created_by) VALUES(?,?,?,?,?,1)",
@@ -663,3 +664,4 @@ def init_db():
                     ("Cement Plant DCS","KR-2025-005","Ssangyong Cement","Donghae","active"),
                 ]
             )
+"""

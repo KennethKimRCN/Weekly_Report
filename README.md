@@ -20,6 +20,7 @@ A full-stack weekly project reporting platform for engineering teams. Team membe
 - [Authentication](#authentication)
 - [Key Concepts](#key-concepts)
 - [Roles & Permissions](#roles--permissions)
+- [Generate Summary — How It Works](#generate-summary--how-it-works)
 - [Development Notes](#development-notes)
 
 ---
@@ -366,19 +367,9 @@ Separate from weekly reports, each project has a **persistent record** (`/api/pr
 
 ### Local LLM Summaries
 
-The **My Report** page includes a `Generate Summary` action that compares the current report against the previous week's report and asks a locally hosted LLM in LM Studio to produce a Korean summary plus highlights.
+The **My Report** page includes a `Generate Summary` action that compares the current report against the previous week's report and asks a locally hosted LLM (via LM Studio) to produce a Korean summary and bullet-point highlights.
 
-Admins can configure the LLM from **Admin -> LLM Settings** in the sidebar:
-- Set the LM Studio base URL
-- Load the available models from `/v1/models` into a dropdown
-- Choose the active model
-- Adjust timeout
-- Edit the system prompt used for weekly summary generation
-
-Important notes:
-- Use the exact model ID returned by LM Studio's `/models` response.
-- Some smaller models may be more sensitive to chat formatting; the backend includes a simplified retry path for `google/gemma-4-e2b`.
-- If the LLM call fails, the app falls back to a deterministic non-LLM summary instead of breaking the report page.
+See [Generate Summary — How It Works](#generate-summary--how-it-works) for the full technical deep-dive: data preparation, prompt construction, retry logic, and fallback behaviour.
 
 ---
 
@@ -399,7 +390,245 @@ Important notes:
 
 ---
 
-## Development Notes
+## Generate Summary — How It Works
+
+This section is a full technical walkthrough of `POST /api/llm/reports/{report_id}/summary` — everything from the database query to the bytes sent to LM Studio and the fallback path taken when the model fails.
+
+All code lives in `backend/app/routers/llm.py`.
+
+---
+
+### Overview
+
+```
+Request
+  └─ 1. Load current report + previous report from DB
+  └─ 2. Strip each report down to an LLM-friendly snapshot
+  └─ 3. Wrap both snapshots into a JSON prompt payload
+  └─ 4. Assemble system prompt + user message
+  └─ 5. POST to LM Studio /v1/chat/completions (primary call)
+         ├─ Success → parse JSON → return summary + highlights
+         └─ Failure
+              ├─ Non-e2b model → return fallback (no LLM)
+              └─ e2b model → retry with flattened single-message format
+                               ├─ Success → return summary + highlights
+                               └─ Failure → return fallback (no LLM)
+```
+
+---
+
+### Step 1 — Loading the two reports
+
+The endpoint resolves two reports for the requesting user:
+
+**Current report** — loaded by `report_id` using `_full_report(conn, report_id)`, the same helper used by the report viewer. This returns the complete nested structure: project entries, schedules, issue items, issue progress rows, comments, and metadata.
+
+**Previous report** — found by querying for the most recent report owned by the same `owner_id` with a `week_start` strictly earlier than the current report's:
+
+```sql
+SELECT id FROM reports
+WHERE owner_id = ? AND week_start < ? AND is_deleted = 0
+ORDER BY week_start DESC
+LIMIT 1
+```
+
+If no previous report exists (e.g. first week), `previous_report` is `None` and all comparison fields become empty arrays.
+
+---
+
+### Step 2 — Building the project snapshot (`_project_snapshot`)
+
+Each full report is passed through `_project_snapshot()`, which strips away everything the LLM doesn't need (IDs, UI metadata, assignees, department info) and keeps only the content-bearing fields:
+
+```python
+{
+  "project_name": str,
+  "solution_product": str | None,
+  "remarks": str | None,
+  "project_status": str,
+  "issues": [
+    {
+      "title": str,
+      "status": str,
+      "priority": str,            # "normal" | "high" | "critical"
+      "start_date": str,
+      "end_date": str | None,
+      "details": str | None,
+      "progresses": [
+        {
+          "title": str,
+          "start_date": str,
+          "end_date": str | None,
+          "details": str | None,
+          "author_name": str
+        }
+      ]
+    }
+  ]
+}
+```
+
+Notably **excluded** from the snapshot: schedule items, completion percentages, risk levels, version history, comments — these are considered UI/workflow data rather than narrative content the LLM needs to summarise.
+
+---
+
+### Step 3 — Building the prompt payload
+
+The two snapshots are wrapped into a single JSON object:
+
+```json
+{
+  "current_week": "2026-04-14",
+  "previous_week": "2026-04-07",
+  "owner_name": "홍길동",
+  "current_projects": [ ...snapshot of current week... ],
+  "previous_projects": [ ...snapshot of previous week, or []... ]
+}
+```
+
+This is serialised with `json.dumps(..., ensure_ascii=False, indent=2)` and embedded directly into the user message. The `indent=2` pretty-printing makes it easier for models with good instruction following to parse, at the cost of a larger token count.
+
+---
+
+### Step 4 — Assembling the messages
+
+**System prompt** (configurable by admins via `PUT /api/llm/settings`, stored in the `llm_settings` table, defaults to):
+
+> You are an assistant that writes concise Korean weekly project summaries for an internal report. Compare the current week against the previous week, focus on issue movement, meaningful progress, newly added work, and items that still need attention. When you mention a current-week issue, use its exact issue title verbatim so the UI can link it. Return only valid JSON with this exact shape: `{"summary":"2-4 sentence Korean summary","highlights":["bullet 1","bullet 2","bullet 3"]}`.
+
+The instruction to use verbatim issue titles is important — the frontend uses the returned highlight strings to hyperlink issue titles in the rendered summary.
+
+**User message:**
+
+```
+현재 주차와 지난 주차 프로젝트 이슈 및 진행내역을 비교해 주세요.
+문장은 자연스러운 한국어로 작성하고, 과장 없이 사실 기반으로 요약하세요.
+
+[full JSON payload from Step 3]
+```
+
+**Primary call parameters:**
+
+```json
+{
+  "model": "<configured model ID>",
+  "temperature": 0.2,
+  "messages": [
+    { "role": "system", "content": "<system prompt>" },
+    { "role": "user",   "content": "<user message + JSON payload>" }
+  ]
+}
+```
+
+`temperature: 0.2` keeps the output factual and consistent across runs while leaving room for natural language variation.
+
+---
+
+### Step 5 — Parsing the response
+
+`_call_llm()` reads the first choice from the `/v1/chat/completions` response and passes the `content` string to `_extract_json_block()`, which:
+
+1. Strips any markdown code fences (` ```json ... ``` `) the model may have wrapped around the output
+2. Finds the first `{` and last `}` in the string — so the model can include preamble text and it will still parse correctly
+3. Calls `json.loads()` on the extracted substring
+4. Validates that `summary` is a non-empty string and `highlights` is a list
+5. Truncates `highlights` to a maximum of 5 items and strips whitespace from each
+
+A valid response the model should return:
+
+```json
+{
+  "summary": "이번 주는 A 프로젝트의 현장 시운전 이슈가 해소되고 B 프로젝트에 신규 이슈가 추가되었습니다. ...",
+  "highlights": [
+    "A 프로젝트 — 현장 시운전 완료, 이슈 종료",
+    "B 프로젝트 — 신규 이슈 '네트워크 구성 오류' 등록",
+    "C 프로젝트 — 진행내역 2건 업데이트, 완료율 변동 없음"
+  ]
+}
+```
+
+---
+
+### Step 6 — The e2b retry path
+
+`google/gemma-4-e2b` (and any model whose ID contains `gemma-4-e2b`) is detected by `_is_e2b_model()`. This model does not reliably support the `system` role through LM Studio's inference channel — it produces a `Channel Error` at the LM Studio layer.
+
+When the primary call fails for an e2b model, a retry is attempted with a **single flattened user message** that concatenates the system prompt directly into the user turn:
+
+```json
+{
+  "model": "<model ID>",
+  "temperature": 0.0,
+  "top_p": 0.9,
+  "max_tokens": 500,
+  "messages": [
+    {
+      "role": "user",
+      "content": "<system prompt>\n\nBelow is the weekly report comparison data.\nWrite the answer in Korean and return only valid JSON.\n\n<user message + JSON payload>"
+    }
+  ]
+}
+```
+
+Key differences from the primary call:
+- `temperature: 0.0` — fully deterministic, reduces the chance of malformed JSON
+- `top_p: 0.9` — nucleus sampling for slight diversity without instability
+- `max_tokens: 500` — hard cap, since e2b has a much smaller effective generation window
+- Single `user` role — avoids the system-role channel error
+
+> **Note on e2b context limits:** Even with the retry, `google/gemma-4-e2b` can fail on large reports because `json.dumps(..., indent=2)` of a report with many projects and issues can exceed ~1500–2000 tokens, which pushes against the model's effective context. `google/gemma-4-31b` handles this reliably because of its larger context window.
+
+---
+
+### Step 7 — The fallback summary
+
+If all LLM calls fail (or the model is not e2b and the primary call fails), `_build_fallback_summary()` generates a deterministic Korean summary entirely in Python with no network calls.
+
+It computes:
+- Total issue count and progress count for both weeks
+- Week-over-week deltas for both
+- New issue titles (in current but not previous)
+- Ongoing issue titles (in both current and previous)
+
+Example fallback output:
+
+```json
+{
+  "summary": "2026-04-14 주간에는 5개 프로젝트를 기준으로 이슈 12건과 진행내역 28건을 정리했습니다.",
+  "highlights": [
+    "이번 주 이슈 12건, 진행내역 28건이 집계되었습니다.",
+    "지난주 대비 이슈는 +2건, 진행내역은 +5건 변화했습니다.",
+    "새롭게 부각된 이슈: 네트워크 구성 오류, 현장 접근 지연",
+    "연속 추적 중인 이슈: FAT 준비, 케이블 트레이 설치"
+  ],
+  "source": "fallback",
+  "model": null,
+  "previous_week_start": "2026-04-07"
+}
+```
+
+The `"source": "fallback"` field lets the frontend display a different indicator (e.g. a muted badge instead of the LLM model name) so users know the summary was not AI-generated.
+
+---
+
+### Admin Configuration
+
+Admins can configure all LLM behaviour from the sidebar under **Admin → LLM Settings**:
+
+| Setting | Description |
+|---|---|
+| `base_url` | LM Studio server root, e.g. `http://localhost:1234/v1` |
+| `model` | Exact model ID as returned by `/v1/models` — must match precisely |
+| `timeout_seconds` | How long to wait for LM Studio before treating the call as failed |
+| `system_prompt` | The full system prompt injected on every summary request |
+
+Settings are stored in the `llm_settings` table (single row, `id=1`). If the row doesn't exist, the backend falls back to the values in `backend/app/core/config.py` (`LLM_BASE_URL`, `LLM_MODEL`, `LLM_TIMEOUT_SECONDS`).
+
+The `GET /api/llm/models` endpoint calls LM Studio's `/v1/models` and returns the sorted list of loaded model IDs — useful for populating the model dropdown in the admin UI without having to copy-paste from LM Studio manually.
+
+---
+
+
 
 **Adding a new router:** Create `backend/app/routers/my_feature.py`, define `router = APIRouter(...)`, add it to `backend/app/routers/__init__.py`, and register it in `main.py`.
 
