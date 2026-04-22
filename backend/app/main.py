@@ -20,6 +20,7 @@ from .routers import (
     notifications_router,
     misc_router,
     llm_router,
+    teams_router,
 )
 
 app = FastAPI(
@@ -49,6 +50,7 @@ for router in (
     notifications_router,
     misc_router,
     llm_router,
+    teams_router,
 ):
     app.include_router(router)
 

@@ -3,7 +3,7 @@ import type {
   LoginResponse, User, ReportSummary, ReportFull, ReportProject,
   Project, Notification, DashboardData, LookupData, AnalyticsData,
   SearchResult, ScheduleEntry, Comment, GeneratedReportSummary, LlmStatus, LlmSettings, LlmModelList,
-  WeeklyDiff,
+  WeeklyDiff, TeamsData, Team,
 } from '../types'
 
 // ── Axios instance ────────────────────────────────────────────────────────
@@ -63,7 +63,7 @@ export const dashboardApi = {
 
 // ── Reports ───────────────────────────────────────────────────────────────
 export const reportsApi = {
-  list: (params?: { week_start?: string; owner_id?: number; status_id?: number }) =>
+  list: (params?: { week_start?: string; owner_id?: number; status_id?: number; team_id?: number }) =>
     http.get<ReportSummary[]>('/reports', { params }),
 
   get: (id: number) => http.get<ReportFull>(`/reports/${id}`),
@@ -151,6 +151,12 @@ export const scheduleApi = {
 export const usersApi = {
   list: () => http.get<User[]>('/users'),
 
+  create: (data: {
+    name: string; email: string; employee_id: string; rank_id: number
+    manager_id?: number | null; phone?: string | null; locale: string
+    is_admin: number; password: string
+  }) => http.post<User>('/users', data),
+
   update: (
     id: number,
     data: {
@@ -165,6 +171,36 @@ export const usersApi = {
       new_password?: string | null
     },
   ) => http.put<User>(`/users/${id}`, data),
+
+  delete: (id: number) => http.delete(`/users/${id}`),
+}
+
+// ── Teams ─────────────────────────────────────────────────────────────────
+export const teamsApi = {
+  list: () => http.get<TeamsData>('/teams'),
+
+  create: (data: { name: string; department_id: number; parent_team_id?: number | null; manager_id?: number | null }) =>
+    http.post<Team>('/teams', data),
+
+  update: (id: number, data: { name: string; department_id: number; parent_team_id?: number | null; manager_id?: number | null }) =>
+    http.put<Team>(`/teams/${id}`, data),
+
+  delete: (id: number) => http.delete(`/teams/${id}`),
+
+  updateMembers: (id: number, members: { user_id: number; role: string; primary_team: number }[]) =>
+    http.put(`/teams/${id}/members`, { members }),
+
+  getMembersRecursive: (id: number) =>
+    http.get<{ id: number; name: string; rank_name: string; team_id: number }[]>(`/teams/${id}/members-recursive`),
+}
+
+// ── Departments ───────────────────────────────────────────────────────────
+export const departmentsApi = {
+  create: (data: { name: string; code?: string | null; parent_id?: number | null }) =>
+    http.post('/teams/departments', data),
+  update: (id: number, data: { name: string; code?: string | null; parent_id?: number | null }) =>
+    http.put(`/teams/departments/${id}`, data),
+  delete: (id: number) => http.delete(`/teams/departments/${id}`),
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────

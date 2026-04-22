@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authApi, lookupsApi, notificationsApi } from '../api'
 import { useAuthStore, useAppStore } from '../store'
+
+const HEADLINE = '함께 만들어가는 팀 이야기'
+const SUBLINE  = '기록하고, 공유하고, 함께 이해하는\n더 나은 업무의 시작'
 
 export default function Login() {
   const [email, setEmail]       = useState('')
@@ -9,9 +12,53 @@ export default function Login() {
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
   const [success, setSuccess]   = useState(false)
+
+  const [headlineIdx, setHeadlineIdx] = useState(0)
+  const [subIdx, setSubIdx]           = useState(0)
+  const [subStarted, setSubStarted]   = useState(false)
+
   const { setAuth } = useAuthStore()
   const { setLookups, setNotifications } = useAppStore()
   const navigate = useNavigate()
+
+  // Type headline first, then subline after a short pause
+  useEffect(() => {
+    if (headlineIdx < HEADLINE.length) {
+      const t = setTimeout(() => setHeadlineIdx(i => i + 1), 60)
+      return () => clearTimeout(t)
+    } else if (!subStarted) {
+      const t = setTimeout(() => setSubStarted(true), 200)
+      return () => clearTimeout(t)
+    }
+  }, [headlineIdx, subStarted])
+
+  useEffect(() => {
+    if (!subStarted) return
+    if (subIdx < SUBLINE.length) {
+      const t = setTimeout(() => setSubIdx(i => i + 1), 38)
+      return () => clearTimeout(t)
+    }
+  }, [subStarted, subIdx])
+
+  // Render headline with 팀 in yellow
+  function renderHeadline(text: string) {
+    const parts = text.split('팀')
+    return parts.map((part, i) => (
+      <span key={i}>
+        {part}
+        {i < parts.length - 1 && (
+          <span className="login-panel-headline-accent">팀</span>
+        )}
+      </span>
+    ))
+  }
+
+  // Render subline preserving \n as <br>
+  function renderSub(text: string) {
+    return text.split('\n').map((line, i, arr) => (
+      <span key={i}>{line}{i < arr.length - 1 && <br />}</span>
+    ))
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -26,7 +73,6 @@ export default function Login() {
       setAuth(res.data.access_token, meRes.data)
       setLookups(lkRes.data)
       setNotifications(notifRes.data)
-      // show success state briefly before navigating
       setSuccess(true)
       setTimeout(() => {
         if ('startViewTransition' in document) {
@@ -50,44 +96,48 @@ export default function Login() {
   return (
     <div className="login-wrap">
 
+      {/* ── top-left logo overlay ── */}
+      <div className="login-page-logo-wrap">
+        <img src="/Yokogawa Logo.png" alt="Yokogawa" className="login-page-logo" />
+        <img src="/Yokogawa Logo.png" alt="" className="login-page-logo-yellow" aria-hidden="true" />
+      </div>
+
       {/* ── left branding panel ── */}
       <div className="login-panel" style={{ viewTransitionName: 'login-panel' }}>
         <div className="login-panel-inner">
-          <img
-            src="/Yokogawa Logo.png"
-            alt="Yokogawa"
-            style={{ height: 28, objectFit: 'contain', marginBottom: 40, opacity: 0.9 }}
-          />
-          <div className="login-panel-logo">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-              <line x1="8" y1="14" x2="16" y2="14"/>
-              <line x1="8" y1="18" x2="13" y2="18"/>
-            </svg>
-            <span style={{ viewTransitionName: 'brand-logo' }}>WeeklyReport</span>
-          </div>
 
           <div className="login-panel-headline">
-            팀의 진행 상황을<br />한눈에 파악하세요
-          </div>
-          <div className="login-panel-sub">
-            주간 보고서 작성부터 승인, 분석까지<br />하나의 플랫폼에서 관리합니다
+            {renderHeadline(HEADLINE.slice(0, headlineIdx))}
+            {headlineIdx < HEADLINE.length && (
+              <span className="login-typing-cursor" />
+            )}
           </div>
 
-          <div className="login-panel-features">
-            {[
-              { icon: '📋', text: '주간 보고서 작성 및 승인' },
-              { icon: '📊', text: '프로젝트 이슈 및 일정 추적' },
-              { icon: '🔍', text: '주간 변경 분석 및 리포트' },
-            ].map(({ icon, text }) => (
-              <div className="login-panel-feature" key={text}>
-                <span className="login-panel-feature-icon">{icon}</span>
-                <span>{text}</span>
-              </div>
-            ))}
+          <div className="login-panel-sub">
+            {subStarted && renderSub(SUBLINE.slice(0, subIdx))}
+            {subStarted && subIdx < SUBLINE.length && (
+              <span className="login-typing-cursor" />
+            )}
+          </div>
+
+        </div>
+
+        {/* ── animated background text ── */}
+        <div className="login-panel-bg-text" aria-hidden="true">
+          <div className="login-bg-track login-bg-track--1">
+            <span>주간 보고서 작성 및 승인</span>
+            <span>주간 보고서 작성 및 승인</span>
+            <span>주간 보고서 작성 및 승인</span>
+          </div>
+          <div className="login-bg-track login-bg-track--2">
+            <span>프로젝트 이슈 및 일정 추적</span>
+            <span>프로젝트 이슈 및 일정 추적</span>
+            <span>프로젝트 이슈 및 일정 추적</span>
+          </div>
+          <div className="login-bg-track login-bg-track--3">
+            <span>주간 변경 분석 및 리포트</span>
+            <span>주간 변경 분석 및 리포트</span>
+            <span>주간 변경 분석 및 리포트</span>
           </div>
         </div>
 

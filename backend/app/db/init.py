@@ -534,7 +534,7 @@ def init_db():
         # Seeds
         if conn.execute("SELECT COUNT(*) FROM ranks").fetchone()["COUNT(*)"] == 0:
             conn.executemany("INSERT INTO ranks(name,sort_order) VALUES(?,?)",
-                [("사원",1),("대리",2),("과장",3),("차장",4),("부장",5)])
+                [("사원",1),("대리",2),("과장",3),("차장",4),("부장",5),("부서장",6)])
 
         if conn.execute("SELECT COUNT(*) FROM report_status").fetchone()["COUNT(*)"] == 0:
             conn.executemany("INSERT INTO report_status(name,sort_order) VALUES(?,?)",
@@ -545,7 +545,7 @@ def init_db():
                 [("출장 (해외)",1),("출장 (국내)",2),("외근",3),("휴가",4),("휴일 출근",5)])
 
         if conn.execute("SELECT COUNT(*) FROM departments").fetchone()["COUNT(*)"] == 0:
-            conn.execute("INSERT INTO departments(id,name,code) VALUES(1,'Solution & Consulting','SCS')")
+            conn.execute("INSERT INTO departments(id,name,code) VALUES(1,'Advanced Solution Engineering Department','Adv.Sol.ENG.Dept')")
 
         if conn.execute("SELECT COUNT(*) FROM llm_settings").fetchone()["COUNT(*)"] == 0:
             conn.execute(
@@ -595,13 +595,64 @@ def init_db():
             )
 
         if conn.execute("SELECT COUNT(*) FROM teams").fetchone()["COUNT(*)"] == 0:
-            conn.execute("INSERT INTO teams(id,name,department_id) VALUES(1,'SCS Team',1)")
-            conn.execute("INSERT INTO user_team_roles(user_id,team_id,role,primary_team) SELECT id,1,'member',1 FROM users")
+            def _uid(emp_id):
+                row = conn.execute("SELECT id FROM users WHERE employee_id=?", (emp_id,)).fetchone()
+                return row["id"] if row else None
+
+            exec_mgr    = _uid("30004679")  # 양우성 부장
+            it_intel_mgr = _uid("30057537") # 민준홍 차장
+            it_digi_mgr  = _uid("30041568") # 노덕기 차장
+            sim_mgr      = _uid("30040640") # 김민욱 차장
+            opt_mgr      = _uid("30046341") # 유세훈 과장
+
+            conn.execute("INSERT INTO teams(id,name,department_id,parent_team_id,manager_id) VALUES(1,'PJT Exec PT',1,NULL,?)", (exec_mgr,))
+            conn.execute("INSERT INTO teams(id,name,department_id,parent_team_id,manager_id) VALUES(2,'IT-Intelligence PT',1,1,?)", (it_intel_mgr,))
+            conn.execute("INSERT INTO teams(id,name,department_id,parent_team_id,manager_id) VALUES(3,'IT-Digitalization PT',1,1,?)", (it_digi_mgr,))
+            conn.execute("INSERT INTO teams(id,name,department_id,parent_team_id,manager_id) VALUES(4,'P-Simulation PT',1,1,?)", (sim_mgr,))
+            conn.execute("INSERT INTO teams(id,name,department_id,parent_team_id,manager_id) VALUES(5,'P-Optimization PT',1,1,?)", (opt_mgr,))
+
+            roles = [
+                ("30004679", 1, "lead",   1),
+                ("30057537", 2, "lead",   1),
+                ("30036413", 2, "member", 1),
+                ("30041568", 3, "lead",   1),
+                ("30049038", 3, "member", 1),
+                ("35003195", 3, "member", 1),
+                ("30040640", 4, "lead",   1),
+                ("30056725", 4, "member", 1),
+                ("30046341", 5, "lead",   1),
+                ("35001480", 5, "member", 1),
+                ("30059497", 5, "member", 1),
+            ]
+            for emp_id, team_id, role, primary in roles:
+                user_id = _uid(emp_id)
+                if user_id:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO user_team_roles(user_id,team_id,role,primary_team) VALUES(?,?,?,?)",
+                        (user_id, team_id, role, primary),
+                    )
+
+            leader_map = {
+                "30057537": exec_mgr,
+                "30041568": exec_mgr,
+                "30040640": exec_mgr,
+                "30046341": exec_mgr,
+                "30036413": it_intel_mgr,
+                "30049038": it_digi_mgr,
+                "35003195": it_digi_mgr,
+                "30056725": sim_mgr,
+                "35001480": opt_mgr,
+                "30059497": opt_mgr,
+            }
+            for emp_id, mgr_id in leader_map.items():
+                if mgr_id:
+                    conn.execute("UPDATE users SET manager_id=? WHERE employee_id=?", (mgr_id, emp_id))
 
         if conn.execute("SELECT COUNT(*) FROM tags").fetchone()["COUNT(*)"] == 0:
             conn.executemany("INSERT INTO tags(name) VALUES(?)",
                 [("#shutdown",),("#safety",),("#maintenance",),("#commissioning",),("#urgent",),("#fyi",)])
 
+"""
         if conn.execute("SELECT COUNT(*) FROM projects").fetchone()["COUNT(*)"] == 0:
             conn.executemany(
                 "INSERT INTO projects(project_name,wbs_number,company,location,status,created_by) VALUES(?,?,?,?,?,1)",
@@ -613,3 +664,4 @@ def init_db():
                     ("Cement Plant DCS","KR-2025-005","Ssangyong Cement","Donghae","active"),
                 ]
             )
+"""
