@@ -88,8 +88,12 @@ def available_weeks(current_user=Depends(get_current_user)):
 @router.get("/analytics/weekly-diff")
 def weekly_diff(week: str = None, current_user=Depends(get_current_user)):
     """Return a per-project diff between two submitted/approved weeks.
+    Uses report_versions snapshots so diffs reflect what was actually submitted,
+    not the current (potentially edited) live state of the DB.
     If `week` is provided, use it as cur_week and pick the preceding available week.
     Otherwise defaults to the two most recent weeks."""
+    import json as _json
+
     with get_db() as conn:
         all_weeks = conn.execute(
             """SELECT DISTINCT week_start FROM reports
@@ -112,62 +116,65 @@ def weekly_diff(week: str = None, current_user=Depends(get_current_user)):
         if prev_week is None:
             return {"current_week": cur_week, "prev_week": None, "projects": [], "available_weeks": week_list}
 
-        def fetch_projects(week):
+        def fetch_projects_from_snapshot(w: str) -> dict:
+            """Read the latest report_version snapshot for every report in week w.
+            Returns a dict keyed by project_id with the merged project data."""
+            # Get latest snapshot per report for this week
             rows = conn.execute(
-                """SELECT rp.id as rp_id, rp.project_id, rp.remarks,
-                          p.project_name, p.company, p.location
-                   FROM report_projects rp
-                   JOIN reports r ON r.id=rp.report_id
-                   JOIN projects p ON p.id=rp.project_id
-                   WHERE r.week_start=? AND r.is_deleted=0""",
-                (week,),
+                """SELECT rv.snapshot_json
+                   FROM report_versions rv
+                   JOIN reports r ON r.id = rv.report_id
+                   WHERE r.week_start = ? AND r.is_deleted = 0
+                     AND rv.version_number = (
+                         SELECT MAX(rv2.version_number)
+                         FROM report_versions rv2
+                         WHERE rv2.report_id = rv.report_id
+                     )""",
+                (w,),
             ).fetchall()
+
             result = {}
-            for rp in rows:
-                rp_id = rp["rp_id"]
-                issues = conn.execute(
-                    """SELECT ii.id, ii.title, ii.status, ii.start_date, ii.end_date, ii.details
-                       FROM issue_item ii WHERE ii.report_project_id=? ORDER BY ii.start_date, ii.id""",
-                    (rp_id,),
-                ).fetchall()
-                issues_with_prog = []
-                for issue in issues:
-                    progresses = conn.execute(
-                        """SELECT ip.id, ip.title, ip.start_date, ip.end_date, ip.details
-                           FROM issue_progress ip WHERE ip.issue_item_id=? ORDER BY ip.start_date, ip.id""",
-                        (issue["id"],),
-                    ).fetchall()
-                    issues_with_prog.append({**dict(issue), "issue_progresses": [dict(p) for p in progresses]})
-
-                schedules = conn.execute(
-                    """SELECT ps.id, ps.title, ps.start_date, ps.end_date
-                       FROM project_schedule ps WHERE ps.report_project_id=? ORDER BY ps.start_date, ps.id""",
-                    (rp_id,),
-                ).fetchall()
-
-                result[rp["project_id"]] = {
-                    "project_id":   rp["project_id"],
-                    "project_name": rp["project_name"],
-                    "company":      rp["company"],
-                    "location":     rp["location"],
-                    "remarks":      rp["remarks"],
-                    "issue_items":  issues_with_prog,
-                    "project_schedules": [dict(s) for s in schedules],
-                }
+            for row in rows:
+                try:
+                    snap = _json.loads(row["snapshot_json"])
+                except Exception:
+                    continue
+                for proj in snap.get("projects", []):
+                    pid = proj.get("project_id")
+                    if pid is None:
+                        continue
+                    # Last snapshot for this project wins (multiple reporters edge case)
+                    result[pid] = {
+                        "project_id":        pid,
+                        "project_name":      proj.get("project_name", ""),
+                        "company":           proj.get("company", ""),
+                        "location":          proj.get("location", ""),
+                        "remarks":           proj.get("remarks") or "",
+                        # project_schedules in snapshot = milestones (see _full_report)
+                        "milestones":        proj.get("project_schedules") or [],
+                        "issue_items":       proj.get("issue_items") or [],
+                    }
             return result
 
-        cur  = fetch_projects(cur_week)
-        prev = fetch_projects(prev_week)
+        cur  = fetch_projects_from_snapshot(cur_week)
+        prev = fetch_projects_from_snapshot(prev_week)
 
         all_project_ids = sorted(set(list(cur.keys()) + list(prev.keys())))
         projects = []
+
+        def _str(v):
+            return (v or "").strip()
+
+        def _field_diff(prev_val, cur_val):
+            p, c = _str(prev_val), _str(cur_val)
+            return {"prev": prev_val, "cur": cur_val} if p != c else None
 
         for pid in all_project_ids:
             c = cur.get(pid)
             p = prev.get(pid)
 
             if c is None:
-                # project dropped off this week
+                # project dropped off this week — skip
                 continue
 
             base = {
@@ -178,19 +185,39 @@ def weekly_diff(week: str = None, current_user=Depends(get_current_user)):
             }
 
             # ── remarks diff ──────────────────────────────────────────────
-            cur_remarks  = (c["remarks"] or "").strip()
-            prev_remarks = (p["remarks"] or "").strip() if p else ""
-            remarks_diff = None
-            if cur_remarks != prev_remarks:
-                remarks_diff = {"prev": prev_remarks or None, "cur": cur_remarks or None}
+            remarks_diff = _field_diff(
+                p["remarks"] if p else "",
+                c["remarks"],
+            )
 
-            # ── schedule diff ─────────────────────────────────────────────
-            prev_sched_titles = {s["title"] for s in (p["project_schedules"] if p else [])}
-            cur_sched_titles  = {s["title"] for s in c["project_schedules"]}
-            sched_added   = [s for s in c["project_schedules"] if s["title"] not in prev_sched_titles]
-            sched_removed = [s for s in (p["project_schedules"] if p else []) if s["title"] not in cur_sched_titles]
+            # ── milestone diff (keyed by title) ───────────────────────────
+            prev_ms = {m["title"]: m for m in (p["milestones"] if p else [])}
+            cur_ms  = {m["title"]: m for m in c["milestones"]}
 
-            # ── issue diff ────────────────────────────────────────────────
+            ms_added   = [m for t, m in cur_ms.items()  if t not in prev_ms]
+            ms_removed = [m for t, m in prev_ms.items() if t not in cur_ms]
+            ms_changed = []
+            for title, cm in cur_ms.items():
+                if title not in prev_ms:
+                    continue
+                pm = prev_ms[title]
+                changes = {}
+                d = _field_diff(pm.get("status"),     cm.get("status"))
+                if d: changes["status"] = d
+                d = _field_diff(pm.get("start_date"), cm.get("start_date"))
+                if d: changes["planned_date"] = d
+                d = _field_diff(pm.get("end_date"),   cm.get("end_date"))
+                if d: changes["actual_date"] = d
+                if changes:
+                    ms_changed.append({
+                        "title":   title,
+                        "status":  cm.get("status"),
+                        "start_date": cm.get("start_date"),
+                        "end_date":   cm.get("end_date"),
+                        "changes": changes,
+                    })
+
+            # ── issue diff (keyed by title) ───────────────────────────────
             prev_issues = {ii["title"]: ii for ii in (p["issue_items"] if p else [])}
             cur_issues  = {ii["title"]: ii for ii in c["issue_items"]}
 
@@ -201,36 +228,59 @@ def weekly_diff(week: str = None, current_user=Depends(get_current_user)):
             for title, ci in cur_issues.items():
                 if title not in prev_issues:
                     issues_added.append(ci)
-                else:
-                    pi = prev_issues[title]
-                    changes = {}
-                    if ci["status"] != pi["status"]:
-                        changes["status"] = {"prev": pi["status"], "cur": ci["status"]}
-                    if (ci["details"] or "").strip() != (pi["details"] or "").strip():
-                        changes["details"] = {"prev": pi["details"], "cur": ci["details"]}
+                    continue
 
-                    prev_prog_titles = {pg["title"] for pg in pi["issue_progresses"]}
-                    cur_prog_titles  = {pg["title"] for pg in ci["issue_progresses"]}
-                    prog_added   = [pg for pg in ci["issue_progresses"] if pg["title"] not in prev_prog_titles]
-                    prog_removed = [pg for pg in pi["issue_progresses"] if pg["title"] not in cur_prog_titles]
+                pi = prev_issues[title]
+                changes = {}
+                for field in ("status", "details", "start_date", "end_date"):
+                    d = _field_diff(pi.get(field), ci.get(field))
+                    if d:
+                        changes[field] = d
 
-                    if changes or prog_added or prog_removed:
-                        issues_changed.append({
-                            "title":          title,
-                            "status":         ci["status"],
-                            "start_date":     ci["start_date"],
-                            "changes":        changes,
-                            "prog_added":     prog_added,
-                            "prog_removed":   prog_removed,
+                # progress diff keyed by title
+                prev_prog = {pg["title"]: pg for pg in (pi.get("issue_progresses") or [])}
+                cur_prog  = {pg["title"]: pg for pg in (ci.get("issue_progresses") or [])}
+
+                prog_added   = [pg for t, pg in cur_prog.items()  if t not in prev_prog]
+                prog_removed = [pg for t, pg in prev_prog.items() if t not in cur_prog]
+                prog_changed = []
+                for ptitle, cpg in cur_prog.items():
+                    if ptitle not in prev_prog:
+                        continue
+                    ppg = prev_prog[ptitle]
+                    pchanges = {}
+                    for field in ("details", "start_date", "end_date"):
+                        d = _field_diff(ppg.get(field), cpg.get(field))
+                        if d:
+                            pchanges[field] = d
+                    if pchanges:
+                        prog_changed.append({
+                            "title":      ptitle,
+                            "start_date": cpg.get("start_date"),
+                            "end_date":   cpg.get("end_date"),
+                            "details":    cpg.get("details"),
+                            "changes":    pchanges,
                         })
+
+                if changes or prog_added or prog_removed or prog_changed:
+                    issues_changed.append({
+                        "title":        title,
+                        "status":       ci.get("status"),
+                        "start_date":   ci.get("start_date"),
+                        "end_date":     ci.get("end_date"),
+                        "changes":      changes,
+                        "prog_added":   prog_added,
+                        "prog_removed": prog_removed,
+                        "prog_changed": prog_changed,
+                    })
 
             for title, pi in prev_issues.items():
                 if title not in cur_issues:
                     issues_removed.append(pi)
 
-            has_diff = (
-                remarks_diff is not None
-                or sched_added or sched_removed
+            has_diff = bool(
+                remarks_diff
+                or ms_added or ms_removed or ms_changed
                 or issues_added or issues_removed or issues_changed
             )
 
@@ -238,14 +288,15 @@ def weekly_diff(week: str = None, current_user=Depends(get_current_user)):
                 **base,
                 "has_diff":       has_diff,
                 "remarks_diff":   remarks_diff,
-                "sched_added":    sched_added,
-                "sched_removed":  sched_removed,
+                "ms_added":       ms_added,
+                "ms_removed":     ms_removed,
+                "ms_changed":     ms_changed,
                 "issues_added":   issues_added,
                 "issues_removed": issues_removed,
                 "issues_changed": issues_changed,
             })
 
-        # Sort: projects with diffs first
+        # Sort: projects with diffs first, then alphabetically
         projects.sort(key=lambda x: (0 if x["has_diff"] else 1, x["project_name"]))
 
         return {"current_week": cur_week, "prev_week": prev_week, "projects": projects, "available_weeks": week_list}

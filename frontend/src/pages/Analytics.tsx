@@ -4,7 +4,7 @@ import { PageSpinner } from '../components/ui'
 import { shortDate } from '../hooks/useDates'
 import type { WeeklyDiff, DiffProject } from '../types'
 
-// ── tiny helpers ────────────────────────────────────────────────────────────
+// ── tiny helpers ─────────────────────────────────────────────────────────────
 
 function Tag({ type }: { type: 'added' | 'removed' | 'changed' }) {
   const map = {
@@ -60,6 +60,15 @@ function DiffRow({ label, prev, cur }: { label?: string; prev: string | null; cu
   )
 }
 
+function DateRange({ start, end }: { start: string | null; end?: string | null }) {
+  if (!start) return null
+  return (
+    <span style={{ fontSize: 11, color: 'var(--ink-4,#999)', marginLeft: 8 }}>
+      {shortDate(start)}{end ? ` ~ ${shortDate(end)}` : ''}
+    </span>
+  )
+}
+
 // ── per-project diff card ────────────────────────────────────────────────────
 
 function ProjectDiffCard({ proj }: { proj: DiffProject }) {
@@ -67,7 +76,7 @@ function ProjectDiffCard({ proj }: { proj: DiffProject }) {
 
   const totalChanges =
     (proj.remarks_diff ? 1 : 0) +
-    proj.sched_added.length + proj.sched_removed.length +
+    proj.ms_added.length + proj.ms_removed.length + proj.ms_changed.length +
     proj.issues_added.length + proj.issues_removed.length + proj.issues_changed.length
 
   return (
@@ -109,6 +118,7 @@ function ProjectDiffCard({ proj }: { proj: DiffProject }) {
             <div style={{ color: 'var(--ink-4,#aaa)', fontSize: 13, paddingTop: 12 }}>이번 주 변경 내용 없음</div>
           ) : (
             <>
+              {/* ── Remarks ── */}
               {proj.remarks_diff && (
                 <>
                   <SectionHeading>비고 (Remarks)</SectionHeading>
@@ -116,99 +126,145 @@ function ProjectDiffCard({ proj }: { proj: DiffProject }) {
                 </>
               )}
 
-              {(proj.sched_added.length > 0 || proj.sched_removed.length > 0) && (
+              {/* ── Milestones ── */}
+              {(proj.ms_added.length > 0 || proj.ms_removed.length > 0 || proj.ms_changed.length > 0) && (
                 <>
-                  <SectionHeading>일정 (Schedules)</SectionHeading>
-                  {proj.sched_added.map((s) => (
-                    <div key={s.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+                  <SectionHeading>마일스톤 (Milestones)</SectionHeading>
+
+                  {proj.ms_added.map((m) => (
+                    <div key={m.title} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
                       <Tag type="added" />
                       <div style={{ fontSize: 13 }}>
-                        <span style={{ fontWeight: 500 }}>{s.title}</span>
-                        <span style={{ fontSize: 11, color: 'var(--ink-4,#999)', marginLeft: 8 }}>
-                          {shortDate(s.start_date)}{s.end_date ? ` ~ ${shortDate(s.end_date)}` : ''}
-                        </span>
+                        <span style={{ fontWeight: 500 }}>{m.title}</span>
+                        <DateRange start={m.start_date} end={m.end_date} />
+                        {m.status && (
+                          <span style={{ fontSize: 11, marginLeft: 8, color: 'var(--ink-4,#999)' }}>{m.status}</span>
+                        )}
                       </div>
                     </div>
                   ))}
-                  {proj.sched_removed.map((s) => (
-                    <div key={s.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+
+                  {proj.ms_removed.map((m) => (
+                    <div key={m.title} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
                       <Tag type="removed" />
                       <div style={{ fontSize: 13, textDecoration: 'line-through', opacity: 0.6 }}>
-                        <span style={{ fontWeight: 500 }}>{s.title}</span>
-                        <span style={{ fontSize: 11, marginLeft: 8 }}>
-                          {shortDate(s.start_date)}{s.end_date ? ` ~ ${shortDate(s.end_date)}` : ''}
-                        </span>
+                        <span style={{ fontWeight: 500 }}>{m.title}</span>
+                        <DateRange start={m.start_date} end={m.end_date} />
                       </div>
+                    </div>
+                  ))}
+
+                  {proj.ms_changed.map((m) => (
+                    <div key={m.title} style={{ marginBottom: 10, paddingLeft: 8, borderLeft: '2px solid var(--blue,#1a73e8)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <Tag type="changed" />
+                        <span style={{ fontWeight: 600, fontSize: 13 }}>{m.title}</span>
+                        <DateRange start={m.start_date} end={m.end_date} />
+                      </div>
+                      {m.changes.status     && <DiffRow label="상태"        prev={m.changes.status.prev}       cur={m.changes.status.cur} />}
+                      {m.changes.planned_date && <DiffRow label="계획일"    prev={m.changes.planned_date.prev} cur={m.changes.planned_date.cur} />}
+                      {m.changes.actual_date  && <DiffRow label="실제완료일" prev={m.changes.actual_date.prev}  cur={m.changes.actual_date.cur} />}
                     </div>
                   ))}
                 </>
               )}
 
+              {/* ── Issues ── */}
               {(proj.issues_added.length > 0 || proj.issues_removed.length > 0 || proj.issues_changed.length > 0) && (
                 <>
                   <SectionHeading>이슈 (Issues)</SectionHeading>
 
                   {proj.issues_added.map((ii) => (
-                    <div key={ii.id} style={{ marginBottom: 10, paddingLeft: 8, borderLeft: '2px solid var(--green,#2d8a4e)' }}>
+                    <div key={ii.title} style={{ marginBottom: 10, paddingLeft: 8, borderLeft: '2px solid var(--green,#2d8a4e)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                         <Tag type="added" />
                         <span style={{ fontWeight: 600, fontSize: 13 }}>{ii.title}</span>
                         <span style={{ fontSize: 11, color: 'var(--ink-4,#999)' }}>{ii.status}</span>
+                        <DateRange start={ii.start_date} end={ii.end_date} />
                       </div>
                       {ii.details && <div style={{ fontSize: 12, color: 'var(--ink-5,#555)', marginBottom: 4 }}>{ii.details}</div>}
-                      {ii.issue_progresses.map((pg) => (
-                        <div key={pg.id} style={{ fontSize: 12, paddingLeft: 12, color: 'var(--ink-5,#555)', marginTop: 2 }}>
-                          • {pg.title}
+                      {ii.issue_progresses?.map((pg) => (
+                        <div key={pg.title} style={{ fontSize: 12, paddingLeft: 12, color: 'var(--ink-5,#555)', marginTop: 2 }}>
+                          • {pg.title}<DateRange start={pg.start_date} end={pg.end_date} />
                         </div>
                       ))}
                     </div>
                   ))}
 
                   {proj.issues_removed.map((ii) => (
-                    <div key={ii.id} style={{ marginBottom: 10, paddingLeft: 8, borderLeft: '2px solid var(--red,#c0392b)', opacity: 0.65 }}>
+                    <div key={ii.title} style={{ marginBottom: 10, paddingLeft: 8, borderLeft: '2px solid var(--red,#c0392b)', opacity: 0.65 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <Tag type="removed" />
                         <span style={{ fontWeight: 600, fontSize: 13, textDecoration: 'line-through' }}>{ii.title}</span>
+                        <DateRange start={ii.start_date} end={ii.end_date} />
                       </div>
                     </div>
                   ))}
 
                   {proj.issues_changed.map((ii) => (
-                    <div key={ii.title} style={{ marginBottom: 12, paddingLeft: 8, borderLeft: '2px solid var(--blue,#1a73e8)' }}>
+                    <div key={ii.title} style={{ marginBottom: 14, paddingLeft: 8, borderLeft: '2px solid var(--blue,#1a73e8)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                         <Tag type="changed" />
                         <span style={{ fontWeight: 600, fontSize: 13 }}>{ii.title}</span>
                         <span style={{ fontSize: 11, color: 'var(--ink-4,#999)' }}>{ii.status}</span>
+                        <DateRange start={ii.start_date} end={ii.end_date} />
                       </div>
-                      {ii.changes.status && (
-                        <DiffRow label="상태" prev={ii.changes.status.prev} cur={ii.changes.status.cur} />
-                      )}
-                      {ii.changes.details && (
-                        <DiffRow label="내용" prev={ii.changes.details.prev} cur={ii.changes.details.cur} />
-                      )}
+
+                      {/* Field-level changes */}
+                      {ii.changes.status     && <DiffRow label="상태"   prev={ii.changes.status.prev}     cur={ii.changes.status.cur} />}
+                      {ii.changes.details    && <DiffRow label="내용"   prev={ii.changes.details.prev}    cur={ii.changes.details.cur} />}
+                      {ii.changes.start_date && <DiffRow label="시작일" prev={ii.changes.start_date.prev} cur={ii.changes.start_date.cur} />}
+                      {ii.changes.end_date   && <DiffRow label="종료일" prev={ii.changes.end_date.prev}   cur={ii.changes.end_date.cur} />}
+
+                      {/* Progress added */}
                       {ii.prog_added.length > 0 && (
-                        <div style={{ marginTop: 4 }}>
+                        <div style={{ marginTop: 6 }}>
                           <span style={{ fontSize: 11, color: 'var(--ink-4,#999)', fontWeight: 600 }}>진행 추가</span>
                           {ii.prog_added.map((pg) => (
-                            <div key={pg.id} style={{
+                            <div key={pg.title} style={{
                               fontSize: 12, padding: '3px 8px', marginTop: 3, borderRadius: 4,
                               background: 'var(--green-tint,#e6f4ea)', color: 'var(--green,#2d8a4e)',
                             }}>
-                              {pg.title}{pg.details && <span style={{ opacity: 0.8 }}> — {pg.details}</span>}
+                              {pg.title}
+                              <DateRange start={pg.start_date} end={pg.end_date} />
+                              {pg.details && <span style={{ opacity: 0.8 }}> — {pg.details}</span>}
                             </div>
                           ))}
                         </div>
                       )}
+
+                      {/* Progress removed */}
                       {ii.prog_removed.length > 0 && (
-                        <div style={{ marginTop: 4 }}>
+                        <div style={{ marginTop: 6 }}>
                           <span style={{ fontSize: 11, color: 'var(--ink-4,#999)', fontWeight: 600 }}>진행 삭제</span>
                           {ii.prog_removed.map((pg) => (
-                            <div key={pg.id} style={{
+                            <div key={pg.title} style={{
                               fontSize: 12, padding: '3px 8px', marginTop: 3, borderRadius: 4,
                               background: 'var(--red-tint,#fdecea)', color: 'var(--red,#c0392b)',
                               textDecoration: 'line-through', opacity: 0.8,
                             }}>
                               {pg.title}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Progress changed */}
+                      {ii.prog_changed.length > 0 && (
+                        <div style={{ marginTop: 6 }}>
+                          <span style={{ fontSize: 11, color: 'var(--ink-4,#999)', fontWeight: 600 }}>진행 변경</span>
+                          {ii.prog_changed.map((pg) => (
+                            <div key={pg.title} style={{
+                              marginTop: 4, paddingLeft: 8,
+                              borderLeft: '2px solid var(--blue-tint,#c6d9fc)',
+                            }}>
+                              <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 2 }}>
+                                {pg.title}
+                                <DateRange start={pg.start_date} end={pg.end_date} />
+                              </div>
+                              {pg.changes.details    && <DiffRow label="내용"   prev={pg.changes.details.prev}    cur={pg.changes.details.cur} />}
+                              {pg.changes.start_date && <DiffRow label="시작일" prev={pg.changes.start_date.prev} cur={pg.changes.start_date.cur} />}
+                              {pg.changes.end_date   && <DiffRow label="종료일" prev={pg.changes.end_date.prev}   cur={pg.changes.end_date.cur} />}
                             </div>
                           ))}
                         </div>

@@ -255,23 +255,48 @@ export interface AnalyticsData {
 
 // ── Weekly Diff (Analytics) ───────────────────────────────────────────────
 export interface DiffField { prev: string | null; cur: string | null }
-export interface DiffSchedule { id: number; title: string; start_date: string; end_date: string | null }
-export interface DiffIssueProgress { id: number; title: string; start_date: string; end_date: string | null; details: string | null }
+
+export interface DiffMilestone {
+  id?: number; title: string
+  start_date: string | null   // planned_date
+  end_date: string | null     // actual_date
+  status: string
+}
+export interface DiffMilestoneChanged {
+  title: string; status: string
+  start_date: string | null; end_date: string | null
+  changes: { status?: DiffField; planned_date?: DiffField; actual_date?: DiffField }
+}
+
+export interface DiffIssueProgress {
+  id?: number; title: string
+  start_date: string; end_date: string | null; details: string | null
+}
+export interface DiffIssueProgressChanged {
+  title: string; start_date: string; end_date: string | null; details: string | null
+  changes: { details?: DiffField; start_date?: DiffField; end_date?: DiffField }
+}
 export interface DiffIssue {
-  id: number; title: string; status: string; start_date: string; end_date: string | null; details: string | null
+  id?: number; title: string; status: string
+  start_date: string; end_date: string | null; details: string | null
   issue_progresses: DiffIssueProgress[]
 }
 export interface DiffIssueChanged {
-  title: string; status: string; start_date: string
-  changes: { status?: DiffField; details?: DiffField }
+  title: string; status: string
+  start_date: string | null; end_date: string | null
+  changes: {
+    status?: DiffField; details?: DiffField
+    start_date?: DiffField; end_date?: DiffField
+  }
   prog_added: DiffIssueProgress[]
   prog_removed: DiffIssueProgress[]
+  prog_changed: DiffIssueProgressChanged[]
 }
 export interface DiffProject {
   project_id: number; project_name: string; company: string; location: string
   has_diff: boolean
   remarks_diff: DiffField | null
-  sched_added: DiffSchedule[]; sched_removed: DiffSchedule[]
+  ms_added: DiffMilestone[]; ms_removed: DiffMilestone[]; ms_changed: DiffMilestoneChanged[]
   issues_added: DiffIssue[]; issues_removed: DiffIssue[]; issues_changed: DiffIssueChanged[]
 }
 export interface WeeklyDiff {
