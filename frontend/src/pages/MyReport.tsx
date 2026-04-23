@@ -12,6 +12,9 @@ export default function MyReport() {
   const [report, setReport] = useState<ReportFull | null | undefined>(undefined)
   const [notFound, setNotFound] = useState(false)
   const dirtyCountRef = useRef(0)
+  function handleDirtyChange(dirty: boolean) {
+    dirtyCountRef.current = dirty ? dirtyCountRef.current + 1 : Math.max(0, dirtyCountRef.current - 1)
+  }
 
   async function load(ws: string) {
     if (!user) return
@@ -100,6 +103,7 @@ export default function MyReport() {
           readOnly={false}
           isAdmin={user?.is_admin === 1}
           onRefresh={() => load(week)}
+          onDirtyChange={handleDirtyChange}
         />
       ) : null}
     </div>

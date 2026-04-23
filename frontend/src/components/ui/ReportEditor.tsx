@@ -1,19 +1,21 @@
 ﻿import { useMemo, useRef, useState, useCallback, type ReactNode } from 'react'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { llmApi, reportsApi, projectsApi } from '../../api'
+import { llmApi, reportsApi, projectsApi, projectRecordApi } from '../../api'
 import { useToast } from './Toast'
 import { Modal } from './Modal'
 import { CarryForwardModal } from './CarryForwardModal'
 import { fmtTime, shortDate } from '../../hooks/useDates'
 import { useAuthStore } from '../../store'
-import type { GeneratedReportSummary, LlmStatus, ReportFull, ReportProject, Project, ProjectStatus } from '../../types'
+import type { GeneratedReportSummary, LlmStatus, ReportFull, ReportProject, Project, ProjectStatus, IssueItem } from '../../types'
+import type { ProgressInput } from '../../api'
 
 interface Props {
   report: ReportFull
   readOnly?: boolean
   isAdmin?: boolean
   onRefresh: () => void
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 const PROJECT_STATUS_OPTIONS: { value: ProjectStatus; label: string }[] = [
@@ -68,7 +70,7 @@ const MILESTONE_STATUS_CHIP: Record<string, string> = {
   cancelled: 'chip-cancelled',
 }
 
-export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefresh }: Props) {
+export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefresh, onDirtyChange }: Props) {
   const { toast } = useToast()
   const { user } = useAuthStore()
   const locked = report.is_locked === 1 && !isAdmin
@@ -82,8 +84,15 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
   const [selectedIssue, setSelectedIssue] = useState<ReportProject['issue_items'][number] | null>(null)
 
   const dirtyRef = useRef<Set<number>>(new Set())
-  const setDirty = useCallback((pid: number) => { dirtyRef.current.add(pid) }, [])
-  const clearDirty = useCallback((pid: number) => { dirtyRef.current.delete(pid) }, [])
+  const setDirty = useCallback((pid: number) => {
+    const wasEmpty = dirtyRef.current.size === 0
+    dirtyRef.current.add(pid)
+    if (wasEmpty) onDirtyChange?.(true)
+  }, [onDirtyChange])
+  const clearDirty = useCallback((pid: number) => {
+    dirtyRef.current.delete(pid)
+    if (dirtyRef.current.size === 0) onDirtyChange?.(false)
+  }, [onDirtyChange])
 
   const totalIssues = report.projects.reduce((sum, project) => sum + project.issue_items.length, 0)
   const totalSchedules = report.projects.reduce((sum, project) => sum + project.project_schedules.length, 0)
@@ -268,7 +277,8 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
   return (
     <div className="report-editor">
       <div className="report-hero">
-        <div className="report-hero-top">
+        {/* Identity row: name, status chip, week */}
+        <div className="report-hero-identity">
           <div className="report-hero-copy">
             <div className="report-hero-kicker">Weekly overview</div>
             <h2 className="report-owner">
@@ -278,56 +288,44 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
               </span>
             </h2>
             <div className="report-week">주간: {report.week_start}</div>
-            <p className="report-hero-description">
-              이번 주 프로젝트 진행상황, 일정, 협업 메모를 한 화면에서 정리했습니다.
-            </p>
-            {generatedSummary && (
-              <div className="report-generated-summary">
-                <div className="report-generated-summary-head">
-                  <span className="report-generated-summary-kicker">Generated Summary</span>
-                  {generatedSummary.previous_week_start && (
-                    <span className="report-generated-summary-meta">
-                      지난 주 비교: {generatedSummary.previous_week_start}
-                    </span>
-                  )}
-                </div>
-                <p className="report-generated-summary-body">{renderSummaryText(generatedSummary.summary)}</p>
-                {generatedSummary.highlights.length > 0 && (
-                  <div className="report-generated-summary-highlights">
-                    {generatedSummary.highlights.map((item, index) => (
-                      <div key={`${item}-${index}`} className="report-generated-summary-item">
-                        {renderSummaryText(item)}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
-
-          <div className="report-stats">
+          {/* Inline metric pills */}
+          <div className="report-metrics-inline">
             {reportMetrics.map(({ num, lbl }) => (
-              <div key={lbl} className="report-stat">
-                <span className="report-stat-num">{num}</span>
-                <span className="report-stat-lbl">{lbl}</span>
+              <div key={lbl} className="report-metric-pill">
+                <span className="report-metric-num">{num}</span>
+                <span className="report-metric-lbl">{lbl}</span>
               </div>
             ))}
           </div>
         </div>
 
+        {/* Rejection banner — only shown when status is 반려 and comment exists */}
+        {report.status_id === 4 && report.manager_comment && (
+          <div className="rejected-banner">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}>
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <div className="rejected-banner-body">
+              <div className="rejected-banner-title">반려됨 — 관리자 코멘트</div>
+              <div className="rejected-banner-reason">{report.manager_comment}</div>
+              <div className="rejected-banner-hint">내용을 수정한 후 다시 제출해 주세요.</div>
+            </div>
+          </div>
+        )}
+        {/* Non-rejection manager comment (e.g. after approval) */}
+        {report.manager_comment && report.status_id !== 4 && (
+          <div className="report-manager-note" style={{ marginTop: 14 }}>
+            <span className="report-manager-note-label">관리자 코멘트</span>
+            <span className="report-manager-note-body">{report.manager_comment}</span>
+          </div>
+        )}
+
+        {/* Action bar */}
         <div className="report-actions">
           <button className="btn btn-secondary" onClick={handleExportWord} disabled={exporting}>
             {exporting ? 'Word 생성 중...' : 'Export to Word'}
           </button>
-          <span title={summaryButtonTitle}>
-            <button
-              className="btn btn-secondary"
-              onClick={handleGenerateSummary}
-              disabled={generatingSummary || llmUnavailable}
-            >
-              {generatingSummary ? 'Summary 생성 중...' : 'Generate Summary'}
-            </button>
-          </span>
           {canEdit && (report.status_id === 1 || report.status_id === 4) && (
             submitConfirm ? (
               <div className="submit-confirm">
@@ -345,13 +343,59 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
               </button>
             )
           )}
-          {report.manager_comment && (
-            <div className="report-manager-note">
-              <span className="report-manager-note-label">관리자 코멘트</span>
-              <span className="report-manager-note-body">{report.manager_comment}</span>
-            </div>
-          )}
         </div>
+      </div>
+
+      <div className="panel panel-ai-summary">
+        <div className="panel-header">
+          <div>
+            <div className="panel-eyebrow">AI 요약</div>
+            <div className="panel-title">주간 요약</div>
+          </div>
+          <div className="panel-actions">
+            <span title={summaryButtonTitle}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={handleGenerateSummary}
+                disabled={generatingSummary || llmUnavailable}
+              >
+                {generatingSummary ? 'Summary 생성 중...' : 'Generate Summary'}
+              </button>
+            </span>
+          </div>
+        </div>
+        {generatedSummary ? (
+          <div className="panel-body panel-body-compact">
+            <div className="report-generated-summary">
+              <div className="report-generated-summary-head">
+                <span className="report-generated-summary-kicker">
+                  {generatedSummary.source === 'llm' ? `Generated · ${generatedSummary.model ?? 'LLM'}` : 'Fallback Summary'}
+                </span>
+                {generatedSummary.previous_week_start && (
+                  <span className="report-generated-summary-meta">
+                    지난 주 비교: {generatedSummary.previous_week_start}
+                  </span>
+                )}
+              </div>
+              <p className="report-generated-summary-body">{renderSummaryText(generatedSummary.summary)}</p>
+              {generatedSummary.highlights.length > 0 && (
+                <div className="report-generated-summary-highlights">
+                  {generatedSummary.highlights.map((item, index) => (
+                    <div key={`${item}-${index}`} className="report-generated-summary-item">
+                      {renderSummaryText(item)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="panel-empty">
+            {llmUnavailable
+              ? 'LLM 서버가 오프라인입니다. 관리자에게 문의해 주세요.'
+              : 'Generate Summary 버튼을 눌러 이번 주 보고서를 요약할 수 있습니다.'}
+          </div>
+        )}
       </div>
 
       <div className="panel">
@@ -373,10 +417,10 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
         ) : (
           <div className="panel-body report-panel-body">
             {groupedProjects.map((group) => (
-              <section key={group.solution} className="report-solution-group">
+              <section key={group.solution} className="report-solution-section">
                 <button
                   type="button"
-                  className="report-collapse-header report-solution-header"
+                  className="report-solution-divider"
                   onClick={() => toggleSolution(group.solution)}
                 >
                   <span className="report-collapse-icon">{collapsedSolutions[group.solution] ? '▸' : '▾'}</span>
@@ -401,8 +445,7 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
                   </div>
                 </div>
               </section>
-            ))}
-          </div>
+            ))}          </div>
         )}
       </div>
 
@@ -411,6 +454,9 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
           <div>
             <div className="panel-eyebrow">개인 일정</div>
             <div className="panel-title">이번 주 일정</div>
+          </div>
+          <div className="panel-actions">
+            <CalendarLinkButton />
           </div>
         </div>
 
@@ -633,17 +679,18 @@ function ProjectCard({
               <select className="status-select" value={projectStatus} onChange={(e) => { setProjectStatus(e.target.value as ProjectStatus); markDirty() }}>
                 {PROJECT_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
-              {confirmRemove ? (
-                <>
-                  <button className="btn btn-danger btn-sm" onClick={remove}>제거</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setConfirmRemove(false)}>취소</button>
-                </>
-              ) : (
-                <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }} onClick={() => setConfirmRemove(true)}>보고서에서 제외</button>
-              )}
               <button className="btn btn-primary btn-sm" disabled={!isDirty || saving} onClick={save}>
                 {saving ? '저장 중...' : '저장'}
               </button>
+              <span className="project-toolbar-separator" />
+              {confirmRemove ? (
+                <>
+                  <button className="btn btn-danger btn-sm" onClick={remove}>제거 확인</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setConfirmRemove(false)}>취소</button>
+                </>
+              ) : (
+                <button className="btn btn-ghost btn-sm project-toolbar-btn-remove" onClick={() => setConfirmRemove(true)}>제외</button>
+              )}
             </div>
           )}
         </div>
@@ -724,7 +771,14 @@ function ProjectCard({
                     ) : (
                       <div className="report-issue-list">
                         {rp.issue_items.map((issue) => (
-                          <ReportIssueCard key={issue.id} issue={issue} onOpenDetail={onOpenIssueDetail} />
+                          <ReportIssueCard
+                            key={issue.id}
+                            issue={issue}
+                            projectId={rp.project_id}
+                            onOpenDetail={onOpenIssueDetail}
+                            onRefresh={onRefresh}
+                            readOnly={readOnly}
+                          />
                         ))}
                       </div>
                     )}
@@ -759,6 +813,15 @@ function ProjectCard({
         </div>
       </div>
     </article>
+  )
+}
+
+function CalendarLinkButton() {
+  const navigate = useNavigate()
+  return (
+    <button className="btn btn-ghost btn-sm" onClick={() => navigate('/calendar')}>
+      캘린더에서 관리
+    </button>
   )
 }
 
@@ -1335,21 +1398,118 @@ function IssueDetailModal({
 
 function ReportIssueCard({
   issue,
+  projectId,
   onOpenDetail,
+  onRefresh,
+  readOnly,
 }: {
   issue: ReportProject['issue_items'][number]
+  projectId: number
   onOpenDetail: (issue: ReportProject['issue_items'][number]) => void
+  onRefresh: () => void
+  readOnly: boolean
 }) {
   const [expanded, setExpanded] = useState(true)
+  const [statusSaving, setStatusSaving] = useState(false)
+  const [addingProgress, setAddingProgress] = useState(false)
+  const [editingProgressId, setEditingProgressId] = useState<number | null>(null)
+  const [progForm, setProgForm] = useState<Partial<ProgressInput>>({})
+  const [progSaving, setProgSaving] = useState(false)
+  const [deletingProgressId, setDeletingProgressId] = useState<number | null>(null)
+  const { toast } = useToast()
+
   const priorityKey = issue.priority ?? 'high'
   const statusChip = ISSUE_STATUS_CHIP[issue.status] ?? 'chip-draft'
+
+  async function handleStatusChange(newStatus: string) {
+    setStatusSaving(true)
+    try {
+      await projectRecordApi.updateIssue(projectId, issue.id, {
+        title: issue.title,
+        status: newStatus,
+        priority: issue.priority ?? 'normal',
+        start_date: issue.start_date,
+        end_date: issue.end_date ?? null,
+        details: issue.details ?? null,
+      })
+      toast('이슈 상태를 업데이트했습니다.', 'success')
+      onRefresh()
+    } catch (e: any) {
+      toast(e.response?.data?.detail ?? '상태 변경에 실패했습니다.', 'error')
+    } finally {
+      setStatusSaving(false)
+    }
+  }
+
+  function openAddProgress() {
+    const today = new Date().toISOString().slice(0, 10)
+    setProgForm({ title: '', start_date: today, end_date: null, details: null })
+    setEditingProgressId(null)
+    setAddingProgress(true)
+  }
+
+  function openEditProgress(p: IssueItem['issue_progresses'][number]) {
+    setProgForm({ title: p.title, start_date: p.start_date, end_date: p.end_date ?? null, details: p.details ?? null })
+    setEditingProgressId(p.id)
+    setAddingProgress(false)
+  }
+
+  function cancelProgressForm() {
+    setAddingProgress(false)
+    setEditingProgressId(null)
+    setProgForm({})
+  }
+
+  async function saveProgress() {
+    if (!progForm.title?.trim() || !progForm.start_date) {
+      toast('제목과 시작일을 입력해 주세요.', 'error')
+      return
+    }
+    setProgSaving(true)
+    try {
+      const body: ProgressInput = {
+        title: progForm.title.trim(),
+        start_date: progForm.start_date,
+        end_date: progForm.end_date || null,
+        details: progForm.details || null,
+      }
+      if (editingProgressId !== null) {
+        await projectRecordApi.updateProgress(projectId, issue.id, editingProgressId, body)
+        toast('진행내역을 수정했습니다.', 'success')
+      } else {
+        await projectRecordApi.addProgress(projectId, issue.id, body)
+        toast('진행내역을 추가했습니다.', 'success')
+      }
+      cancelProgressForm()
+      onRefresh()
+    } catch (e: any) {
+      toast(e.response?.data?.detail ?? '저장하지 못했습니다.', 'error')
+    } finally {
+      setProgSaving(false)
+    }
+  }
+
+  async function deleteProgress(progressId: number) {
+    setDeletingProgressId(progressId)
+    try {
+      await projectRecordApi.deleteProgress(projectId, issue.id, progressId)
+      toast('진행내역을 삭제했습니다.', 'success')
+      onRefresh()
+    } catch (e: any) {
+      toast(e.response?.data?.detail ?? '삭제하지 못했습니다.', 'error')
+    } finally {
+      setDeletingProgressId(null)
+    }
+  }
+
+  const isEditingAny = addingProgress || editingProgressId !== null
 
   return (
     <div className="report-issue-card" id={`report-issue-${issue.id}`}>
       <div className="report-issue-row">
         <button
           className="report-issue-toggle"
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => setExpanded((v) => !v)}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s' }}>
             <polyline points="9 18 15 12 9 6" />
@@ -1358,45 +1518,167 @@ function ReportIssueCard({
 
         <button
           type="button"
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => setExpanded((v) => !v)}
           className="report-issue-hitarea"
         >
-            <div className="report-issue-title-row">
+          <div className="report-issue-title-row">
             <span className="report-issue-title">{issue.title}</span>
             <span className={`chip ${PRIORITY_CHIP[priorityKey] ?? 'chip-on_hold'}`} style={{ fontSize: 10 }}>
               {PRIORITY_LABEL[priorityKey] ?? '중요'}
             </span>
             <span className={`chip ${statusChip}`} style={{ fontSize: 10 }}>{issue.status}</span>
-            </div>
-            {issue.details && <div className="report-issue-summary">{issue.details}</div>}
-            <div className="report-issue-meta">
-              {issue.start_date}
-              {issue.end_date ? ` ~ ${issue.end_date}` : ''}
-            </div>
+          </div>
+          {issue.details && <div className="report-issue-summary">{issue.details}</div>}
+          <div className="report-issue-meta">
+            {issue.start_date}
+            {issue.end_date ? ` ~ ${issue.end_date}` : ''}
+          </div>
         </button>
+
+        {!readOnly && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
+            <select
+              className="status-select"
+              value={issue.status}
+              disabled={statusSaving}
+              onChange={(e) => handleStatusChange(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              style={{ fontSize: 11 }}
+            >
+              {['초안', '진행중', '완료', '취소'].map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       <div className={`report-issue-progress-collapse ${expanded ? 'is-expanded' : ''}`}>
-        <button
-          type="button"
-          onClick={() => onOpenDetail(issue)}
-          className="report-issue-hitarea report-issue-progress-hitarea"
-          style={{ cursor: 'pointer', textAlign: 'left' }}
-        >
-          {issue.issue_progresses.length === 0 ? (
-            <div className="report-issue-progress-empty">진행내역이 없습니다.</div>
-          ) : issue.issue_progresses.map((progress) => (
-            <div key={progress.id} className="report-issue-progress-row">
-              <div className="report-issue-progress-date">
-                {progress.start_date}{progress.end_date && progress.end_date !== progress.start_date ? ` ~ ${progress.end_date}` : ''}
+        {/* progress list */}
+        {issue.issue_progresses.length === 0 && !isEditingAny ? (
+          <div className="report-issue-progress-empty" style={{ paddingBottom: readOnly ? 0 : 4 }}>
+            진행내역이 없습니다.
+          </div>
+        ) : (
+          issue.issue_progresses.map((progress) => (
+            editingProgressId === progress.id ? (
+              <InlineProgressForm
+                key={progress.id}
+                form={progForm}
+                onChange={setProgForm}
+                onSave={saveProgress}
+                onCancel={cancelProgressForm}
+                saving={progSaving}
+              />
+            ) : (
+              <div key={progress.id} className="report-issue-progress-row" style={{ position: 'relative' }}>
+                <div className="report-issue-progress-date">
+                  {progress.start_date}{progress.end_date && progress.end_date !== progress.start_date ? ` ~ ${progress.end_date}` : ''}
+                </div>
+                <div className="report-issue-progress-copy">
+                  <div className="report-issue-progress-title">{progress.title}</div>
+                  {progress.details && <div className="report-issue-progress-detail">{progress.details}</div>}
+                  {progress.author_name && <div className="report-issue-progress-author">{progress.author_name}</div>}
+                </div>
+                {!readOnly && !isEditingAny && (
+                  <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', alignItems: 'center', flexShrink: 0 }}>
+                    <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 6px' }} onClick={() => openEditProgress(progress)}>수정</button>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: 11, padding: '2px 6px', color: 'var(--red)' }}
+                      disabled={deletingProgressId === progress.id}
+                      onClick={() => deleteProgress(progress.id)}
+                    >
+                      {deletingProgressId === progress.id ? '...' : '삭제'}
+                    </button>
+                  </div>
+                )}
               </div>
-              <div className="report-issue-progress-copy">
-                <div className="report-issue-progress-title">{progress.title}</div>
-                {progress.details && <div className="report-issue-progress-detail">{progress.details}</div>}
-                {progress.author_name && <div className="report-issue-progress-author">{progress.author_name}</div>}
-              </div>
-            </div>
-          ))}
+            )
+          ))
+        )}
+
+        {addingProgress && (
+          <InlineProgressForm
+            form={progForm}
+            onChange={setProgForm}
+            onSave={saveProgress}
+            onCancel={cancelProgressForm}
+            saving={progSaving}
+          />
+        )}
+
+        {/* footer row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
+          {!readOnly && !isEditingAny && (
+            <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={openAddProgress}>
+              + 진행내역 추가
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: 11, marginLeft: 'auto' }}
+            onClick={() => onOpenDetail(issue)}
+          >
+            전체 히스토리 보기
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InlineProgressForm({
+  form,
+  onChange,
+  onSave,
+  onCancel,
+  saving,
+}: {
+  form: Partial<ProgressInput>
+  onChange: (f: Partial<ProgressInput>) => void
+  onSave: () => void
+  onCancel: () => void
+  saving: boolean
+}) {
+  return (
+    <div style={{ background: 'var(--surface-2, var(--ink-7, #f8f9fa))', borderRadius: 6, padding: '10px 12px', margin: '4px 0', display: 'grid', gap: 8 }}>
+      <input
+        className="modal-search-input"
+        placeholder="진행내역 제목 *"
+        value={form.title ?? ''}
+        onChange={(e) => onChange({ ...form, title: e.target.value })}
+        style={{ fontSize: 12 }}
+        autoFocus
+      />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="date"
+          className="modal-search-input"
+          value={form.start_date ?? ''}
+          onChange={(e) => onChange({ ...form, start_date: e.target.value })}
+          style={{ fontSize: 12, flex: 1 }}
+        />
+        <input
+          type="date"
+          className="modal-search-input"
+          value={form.end_date ?? ''}
+          onChange={(e) => onChange({ ...form, end_date: e.target.value || null })}
+          style={{ fontSize: 12, flex: 1 }}
+          placeholder="종료일 (선택)"
+        />
+      </div>
+      <textarea
+        className="project-remarks-input"
+        rows={2}
+        placeholder="상세 내용 (선택)"
+        value={form.details ?? ''}
+        onChange={(e) => onChange({ ...form, details: e.target.value || null })}
+        style={{ fontSize: 12 }}
+      />
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+        <button className="btn btn-ghost btn-sm" onClick={onCancel} disabled={saving}>취소</button>
+        <button className="btn btn-primary btn-sm" onClick={onSave} disabled={saving}>
+          {saving ? '저장 중...' : '저장'}
         </button>
       </div>
     </div>
