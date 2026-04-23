@@ -108,8 +108,8 @@ export const reportsApi = {
     parent_comment_id?: number,
   ) => http.post<Comment>(`/reports/${reportId}/comments`, { comment, parent_comment_id }),
 
-  generateSummary: (reportId: number) =>
-    http.post<GeneratedReportSummary>(`/llm/reports/${reportId}/summary`),
+  generateSummary: (reportId: number, system_prompt?: string) =>
+    http.post<GeneratedReportSummary>(`/llm/reports/${reportId}/summary`, { system_prompt: system_prompt ?? null }),
 }
 
 // ── Projects ──────────────────────────────────────────────────────────────
@@ -327,4 +327,6 @@ export const llmApi = {
     http.get<LlmModelList>('/llm/models', { params }),
   updateSettings: (data: { base_url: string; model: string; timeout_seconds: number; system_prompt: string }) =>
     http.put<LlmSettings>('/llm/settings', data),
+  getSystemPrompt: () =>
+    http.get<{ system_prompt: string }>('/llm/system-prompt'),
 }

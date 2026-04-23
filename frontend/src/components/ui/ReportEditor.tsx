@@ -1,4 +1,4 @@
-﻿import { useMemo, useRef, useState, useCallback, type ReactNode } from 'react'
+import { useMemo, useRef, useState, useCallback, type ReactNode } from 'react'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { llmApi, reportsApi, projectsApi, projectRecordApi } from '../../api'
@@ -81,6 +81,7 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
   const [generatingSummary, setGeneratingSummary] = useState(false)
   const [generatedSummary, setGeneratedSummary] = useState<GeneratedReportSummary | null>(null)
   const [llmStatus, setLlmStatus] = useState<LlmStatus | null>(null)
+  const [systemPrompt, setSystemPrompt] = useState<string | null>(null)
   const [selectedIssue, setSelectedIssue] = useState<ReportProject['issue_items'][number] | null>(null)
 
   const dirtyRef = useRef<Set<number>>(new Set())
@@ -134,16 +135,18 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
 
     async function loadLlmStatus() {
       try {
-        const res = await llmApi.status()
-        if (!cancelled) setLlmStatus(res.data)
+        const [statusRes, promptRes] = await Promise.allSettled([
+          llmApi.status(),
+          llmApi.getSystemPrompt(),
+        ])
+        if (!cancelled) {
+          if (statusRes.status === 'fulfilled') setLlmStatus(statusRes.value.data)
+          else setLlmStatus({ available: false, model: null, base_url: '', error: 'offline' })
+          if (promptRes.status === 'fulfilled') setSystemPrompt(promptRes.value.data.system_prompt ?? null)
+        }
       } catch {
         if (!cancelled) {
-          setLlmStatus({
-            available: false,
-            model: null,
-            base_url: '',
-            error: 'offline',
-          })
+          setLlmStatus({ available: false, model: null, base_url: '', error: 'offline' })
         }
       }
     }
@@ -208,7 +211,7 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
     if (!llmStatus?.available) return
     setGeneratingSummary(true)
     try {
-      const res = await reportsApi.generateSummary(report.id)
+      const res = await reportsApi.generateSummary(report.id, systemPrompt ?? undefined)
       setGeneratedSummary(res.data)
       toast(
         res.data.source === 'llm'

@@ -180,6 +180,14 @@ def llm_status(current_user=Depends(get_current_user)):
     }
 
 
+@router.get("/system-prompt")
+def get_system_prompt(current_user=Depends(get_current_user)):
+    """Public endpoint — returns only the system prompt, safe for all authenticated users."""
+    with get_db() as conn:
+        settings = _get_llm_settings(conn)
+    return {"system_prompt": settings.get("system_prompt") or DEFAULT_SYSTEM_PROMPT}
+
+
 @router.get("/settings")
 def get_llm_settings(current_user=Depends(require_admin)):
     with get_db() as conn:
@@ -287,8 +295,17 @@ def _is_e2b_model(model_name: str) -> bool:
     return "gemma-4-e2b" in normalized
 
 
+class SummaryRequest(BaseModel):
+    system_prompt: Optional[str] = None
+
+
 @router.post("/reports/{report_id}/summary")
-def generate_report_summary(report_id: int, current_user=Depends(get_current_user)):
+def generate_report_summary(
+    report_id: int,
+    body: SummaryRequest = None,
+    current_user=Depends(get_current_user),
+):
+    body = body or SummaryRequest()
     with get_db() as conn:
         settings = _get_llm_settings(conn)
         report_row = conn.execute(
@@ -319,7 +336,8 @@ def generate_report_summary(report_id: int, current_user=Depends(get_current_use
         "previous_projects": _project_snapshot(previous_report) if previous_report else [],
     }
 
-    system_prompt = settings.get("system_prompt") or DEFAULT_SYSTEM_PROMPT
+    # Prefer caller-supplied prompt (unsaved edits); fall back to DB, then hardcoded default.
+    system_prompt = (body.system_prompt or "").strip() or settings.get("system_prompt") or DEFAULT_SYSTEM_PROMPT
     user_prompt = (
         "현재 주차와 지난 주차 프로젝트 이슈 및 진행내역을 비교해 주세요. "
         "문장은 자연스러운 한국어로 작성하고, 과장 없이 사실 기반으로 요약하세요.\n\n"
