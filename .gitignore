@@ -1,0 +1,105 @@
+# =========================
+
+# OS / System
+
+# =========================
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# =========================
+
+# Editor / IDE
+
+# =========================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# =========================
+
+# Environment variables
+
+# =========================
+
+.env
+.env.*
+!.env.example
+
+# =========================
+
+# Python / FastAPI
+
+# =========================
+
+**pycache**/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+
+venv/
+.env/
+.venv/
+
+# Python build / packaging
+
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing / coverage
+
+.coverage
+htmlcov/
+.pytest_cache/
+
+# =========================
+
+# Node / React (Vite)
+
+# =========================
+
+node_modules/
+
+# Vite build output
+
+dist/
+
+# Logs
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+
+# Misc
+
+# =========================
+
+.cache/
+.tmp/
+.temp/
+*.log
+
+# =========================
+
+# Optional (uncomment if needed)
+
+# =========================
+
+# SQLite database
+
+# *.db
+
+# Mac resource fork
+
+# ._*
