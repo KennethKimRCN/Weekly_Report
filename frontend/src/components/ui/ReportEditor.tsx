@@ -441,7 +441,6 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
                           readOnly={!canEdit}
                           onRefresh={onRefresh}
                           onDirtyChange={(dirty) => (dirty ? setDirty(project.project_id) : clearDirty(project.project_id))}
-                          onOpenIssueDetail={setSelectedIssue}
                         />
                       ))}
                     </div>
@@ -571,14 +570,12 @@ function ProjectCard({
   readOnly,
   onRefresh,
   onDirtyChange,
-  onOpenIssueDetail,
 }: {
   rp: ReportProject
   reportId: number
   readOnly: boolean
   onRefresh: () => void
   onDirtyChange: (dirty: boolean) => void
-  onOpenIssueDetail: (issue: ReportProject['issue_items'][number]) => void
 }) {
   const navigate = useNavigate()
   const { toast } = useToast()
@@ -778,7 +775,6 @@ function ProjectCard({
                             key={issue.id}
                             issue={issue}
                             projectId={rp.project_id}
-                            onOpenDetail={onOpenIssueDetail}
                             onRefresh={onRefresh}
                             readOnly={readOnly}
                           />
@@ -1402,24 +1398,36 @@ function IssueDetailModal({
 function ReportIssueCard({
   issue,
   projectId,
-  onOpenDetail,
   onRefresh,
   readOnly,
 }: {
   issue: ReportProject['issue_items'][number]
   projectId: number
-  onOpenDetail: (issue: ReportProject['issue_items'][number]) => void
   onRefresh: () => void
   readOnly: boolean
 }) {
   const [expanded, setExpanded] = useState(true)
+  const [showAllProgress, setShowAllProgress] = useState(false)
   const [statusSaving, setStatusSaving] = useState(false)
   const [addingProgress, setAddingProgress] = useState(false)
   const [editingProgressId, setEditingProgressId] = useState<number | null>(null)
   const [progForm, setProgForm] = useState<Partial<ProgressInput>>({})
   const [progSaving, setProgSaving] = useState(false)
-  const [deletingProgressId, setDeletingProgressId] = useState<number | null>(null)
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null)
+  const [flashingId, setFlashingId] = useState<number | null>(null)
+  const [removingId, setRemovingId] = useState<number | null>(null)
+  const [animatingInIds, setAnimatingInIds] = useState<Set<number>>(new Set())
+  const [collapsingExtras, setCollapsingExtras] = useState(false)
   const { toast } = useToast()
+
+  const [localProgresses, setLocalProgresses] = useState(issue.issue_progresses)
+  const [localFullProgresses, setLocalFullProgresses] = useState(issue.full_issue_progresses ?? issue.issue_progresses)
+
+  const currentWeekProgressIds = new Set(issue.issue_progresses.map((p) => p.id))
+  const displayedProgresses = (showAllProgress ? localFullProgresses : localProgresses)
+    .slice()
+    .sort((a, b) => b.start_date.localeCompare(a.start_date))
+  const hasMore = localFullProgresses.length > localProgresses.length
 
   const priorityKey = issue.priority ?? 'high'
   const statusChip = ISSUE_STATUS_CHIP[issue.status] ?? 'chip-draft'
@@ -1449,12 +1457,14 @@ function ReportIssueCard({
     setProgForm({ title: '', start_date: today, end_date: null, details: null })
     setEditingProgressId(null)
     setAddingProgress(true)
+    setConfirmingDeleteId(null)
   }
 
   function openEditProgress(p: IssueItem['issue_progresses'][number]) {
     setProgForm({ title: p.title, start_date: p.start_date, end_date: p.end_date ?? null, details: p.details ?? null })
     setEditingProgressId(p.id)
     setAddingProgress(false)
+    setConfirmingDeleteId(null)
   }
 
   function cancelProgressForm() {
@@ -1477,14 +1487,25 @@ function ReportIssueCard({
         details: progForm.details || null,
       }
       if (editingProgressId !== null) {
-        await projectRecordApi.updateProgress(projectId, issue.id, editingProgressId, body)
+        const res = await projectRecordApi.updateProgress(projectId, issue.id, editingProgressId, body)
+        const updated = res.data
+        const patch = (list: typeof localProgresses) => list.map((p) => p.id === updated.id ? updated : p)
+        setLocalProgresses(patch)
+        setLocalFullProgresses(patch)
+        cancelProgressForm()
+        setFlashingId(updated.id)
+        setTimeout(() => setFlashingId(null), 1800)
         toast('진행내역을 수정했습니다.', 'success')
       } else {
-        await projectRecordApi.addProgress(projectId, issue.id, body)
+        const res = await projectRecordApi.addProgress(projectId, issue.id, body)
+        const created = res.data
+        setLocalProgresses((prev) => [...prev, created])
+        setLocalFullProgresses((prev) => [...prev, created])
+        cancelProgressForm()
+        setFlashingId(created.id)
+        setTimeout(() => setFlashingId(null), 1800)
         toast('진행내역을 추가했습니다.', 'success')
       }
-      cancelProgressForm()
-      onRefresh()
     } catch (e: any) {
       toast(e.response?.data?.detail ?? '저장하지 못했습니다.', 'error')
     } finally {
@@ -1493,15 +1514,18 @@ function ReportIssueCard({
   }
 
   async function deleteProgress(progressId: number) {
-    setDeletingProgressId(progressId)
     try {
       await projectRecordApi.deleteProgress(projectId, issue.id, progressId)
+      setConfirmingDeleteId(null)
+      setRemovingId(progressId)
+      setTimeout(() => {
+        setLocalProgresses((prev) => prev.filter((p) => p.id !== progressId))
+        setLocalFullProgresses((prev) => prev.filter((p) => p.id !== progressId))
+        setRemovingId(null)
+      }, 320)
       toast('진행내역을 삭제했습니다.', 'success')
-      onRefresh()
     } catch (e: any) {
       toast(e.response?.data?.detail ?? '삭제하지 못했습니다.', 'error')
-    } finally {
-      setDeletingProgressId(null)
     }
   }
 
@@ -1509,6 +1533,21 @@ function ReportIssueCard({
 
   return (
     <div className="report-issue-card" id={`report-issue-${issue.id}`}>
+      <style>{`
+        @keyframes progress-flash {
+          0%   { background: rgba(34, 197, 94, 0.25); border-radius: 4px; }
+          40%  { background: rgba(34, 197, 94, 0.18); border-radius: 4px; }
+          100% { background: transparent; }
+        }
+        @keyframes progress-slide-in {
+          0%   { opacity: 0; transform: translateY(-6px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes progress-slide-out {
+          0%   { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-6px); }
+        }
+      `}</style>
       <div className="report-issue-row">
         <button
           className="report-issue-toggle"
@@ -1556,13 +1595,18 @@ function ReportIssueCard({
 
       <div className={`report-issue-progress-collapse ${expanded ? 'is-expanded' : ''}`}>
         {/* progress list */}
-        {issue.issue_progresses.length === 0 && !isEditingAny ? (
+        {displayedProgresses.length === 0 && !isEditingAny ? (
           <div className="report-issue-progress-empty" style={{ paddingBottom: readOnly ? 0 : 4 }}>
             진행내역이 없습니다.
           </div>
         ) : (
-          issue.issue_progresses.map((progress) => (
-            editingProgressId === progress.id ? (
+          displayedProgresses.map((progress) => {
+            const isThisWeek = currentWeekProgressIds.has(progress.id)
+            const isHighlighted = showAllProgress && isThisWeek
+            const isExtra = !isThisWeek
+            const isAnimatingIn = animatingInIds.has(progress.id)
+            const isAnimatingOut = collapsingExtras && isExtra
+            return editingProgressId === progress.id ? (
               <InlineProgressForm
                 key={progress.id}
                 form={progForm}
@@ -1572,9 +1616,52 @@ function ReportIssueCard({
                 saving={progSaving}
               />
             ) : (
-              <div key={progress.id} className="report-issue-progress-row" style={{ position: 'relative' }}>
+              <div
+                key={progress.id}
+                className="report-issue-progress-row"
+                style={{
+                  position: 'relative',
+                  transition: 'opacity 0.28s ease, max-height 0.28s ease, margin 0.28s ease, padding 0.28s ease',
+                  ...(removingId === progress.id ? {
+                    opacity: 0,
+                    maxHeight: 0,
+                    overflow: 'hidden',
+                    marginTop: 0,
+                    marginBottom: 0,
+                    paddingTop: 0,
+                    paddingBottom: 0,
+                  } : flashingId === progress.id ? {
+                    animation: 'progress-flash 1.8s ease forwards',
+                  } : isAnimatingIn ? {
+                    animation: 'progress-slide-in 0.32s ease forwards',
+                  } : isAnimatingOut ? {
+                    animation: 'progress-slide-out 0.26s ease forwards',
+                  } : isHighlighted ? {
+                    background: 'var(--blue-light, rgba(26,115,232,0.06))',
+                    borderLeft: '2.5px solid var(--blue)',
+                    marginLeft: -8,
+                    paddingLeft: 8,
+                    borderRadius: 4,
+                  } : showAllProgress && !isThisWeek ? {
+                    opacity: 0.6,
+                  } : {}),
+                }}
+              >
                 <div className="report-issue-progress-date">
-                  {progress.start_date}{progress.end_date && progress.end_date !== progress.start_date ? ` ~ ${progress.end_date}` : ''}
+                  <div>{progress.start_date}{progress.end_date && progress.end_date !== progress.start_date ? ` ~ ${progress.end_date}` : ''}</div>
+                  {isHighlighted && (
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      padding: '1px 6px',
+                      borderRadius: 20,
+                      background: 'rgba(26,115,232,0.12)',
+                      color: 'var(--blue)',
+                      border: '1px solid var(--blue)',
+                      display: 'inline-block',
+                      marginTop: 2,
+                    }}>이번 주</span>
+                  )}
                 </div>
                 <div className="report-issue-progress-copy">
                   <div className="report-issue-progress-title">{progress.title}</div>
@@ -1583,20 +1670,35 @@ function ReportIssueCard({
                 </div>
                 {!readOnly && !isEditingAny && (
                   <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', alignItems: 'center', flexShrink: 0 }}>
-                    <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 6px' }} onClick={() => openEditProgress(progress)}>수정</button>
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      style={{ fontSize: 11, padding: '2px 6px', color: 'var(--red)' }}
-                      disabled={deletingProgressId === progress.id}
-                      onClick={() => deleteProgress(progress.id)}
-                    >
-                      {deletingProgressId === progress.id ? '...' : '삭제'}
-                    </button>
+                    {confirmingDeleteId === progress.id ? (
+                      <>
+                        <span style={{ fontSize: 11, color: 'var(--red)', whiteSpace: 'nowrap' }}>삭제할까요?</span>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          style={{ fontSize: 11, padding: '2px 8px' }}
+                          onClick={() => deleteProgress(progress.id)}
+                        >확인</button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: 11, padding: '2px 8px' }}
+                          onClick={() => setConfirmingDeleteId(null)}
+                        >취소</button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 6px' }} onClick={() => openEditProgress(progress)}>수정</button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: 11, padding: '2px 6px', color: 'var(--red)' }}
+                          onClick={() => setConfirmingDeleteId(progress.id)}
+                        >삭제</button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
             )
-          ))
+          })
         )}
 
         {addingProgress && (
@@ -1616,14 +1718,35 @@ function ReportIssueCard({
               + 진행내역 추가
             </button>
           )}
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11, marginLeft: 'auto' }}
-            onClick={() => onOpenDetail(issue)}
-          >
-            전체 히스토리 보기
-          </button>
+          {hasMore && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: 11, marginLeft: 'auto', color: showAllProgress ? 'var(--blue)' : undefined }}
+              onClick={() => {
+                if (!showAllProgress) {
+                  // Expanding: show extras, then mark them for fade-in
+                  setShowAllProgress(true)
+                  const extraIds = new Set(
+                    localFullProgresses
+                      .filter((p) => !currentWeekProgressIds.has(p.id))
+                      .map((p) => p.id)
+                  )
+                  setAnimatingInIds(extraIds)
+                  setTimeout(() => setAnimatingInIds(new Set()), 400)
+                } else {
+                  // Collapsing: play fade-out on extras, then hide
+                  setCollapsingExtras(true)
+                  setTimeout(() => {
+                    setShowAllProgress(false)
+                    setCollapsingExtras(false)
+                  }, 280)
+                }
+              }}
+            >
+              {showAllProgress ? '이번 주만 보기' : `전체보기 (${localFullProgresses.length}건)`}
+            </button>
+          )}
         </div>
       </div>
     </div>
