@@ -641,7 +641,7 @@ function ProjectCard({
   }
 
   return (
-    <article className="project-card report-project-card">
+    <article className="project-card report-project-card" id={`report-project-${rp.project_id}`}>
       <div className="project-card-header">
         <div className="project-card-main">
           <button
