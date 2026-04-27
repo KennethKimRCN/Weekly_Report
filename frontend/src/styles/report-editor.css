@@ -712,21 +712,71 @@
 .report-issue-list { display: grid; gap: 10px; }
 
 .report-issue-card {
-  border: 1px solid var(--border);
+  border: 0.5px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
-  padding: 10px;
+  padding: 0;
+  overflow: hidden;
 }
-.report-issue-row { display: flex; align-items: flex-start; gap: 10px; }
+
+/* Left-edge status bar */
+.report-issue-status-bar {
+  width: 3px;
+  border-radius: 0;
+  flex-shrink: 0;
+  align-self: stretch;
+  min-height: 20px;
+}
+
+.report-issue-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+/* The main clickable header area */
+.report-issue-hitarea {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 8px 10px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+.report-issue-hitarea:hover { background: var(--surface-2); }
+
+/* Collapse toggle — right edge */
 .report-issue-toggle {
-  background: none; border: none; padding: 8px 0 0;
-  cursor: pointer; color: var(--blue); flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 10px 10px;
+  cursor: pointer;
+  color: var(--ink-4);
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
 }
+.report-issue-toggle:hover { color: var(--blue); }
+
 .report-issue-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.report-issue-title { font-size: 13px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; }
-.report-issue-summary { font-size: 12px; color: var(--ink-3); margin-top: 6px; line-height: 1.6; }
+.report-issue-title { font-size: 13px; font-weight: 500; color: var(--ink); }
+.report-issue-summary { font-size: 12px; color: var(--ink-3); margin-top: 5px; line-height: 1.6; }
 .report-issue-meta { font-size: 11px; color: var(--ink-4); margin-top: 6px; }
 
+/* Compact date chips */
+.report-issue-date-chip {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+  background: var(--surface-3);
+  border: 0.5px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  display: inline-block;
+}
+
+/* Progress collapse */
 .report-issue-progress-collapse {
   display: grid;
   grid-template-rows: 0fr;
@@ -737,33 +787,87 @@
   grid-template-rows: 1fr;
   opacity: 1;
 }
-.report-issue-progress-collapse > * { min-height: 0; overflow: hidden; }
+.report-issue-progress-inner {
+  min-height: 0;
+  overflow: hidden;
+  padding: 6px 12px 10px 12px;
+  border-top: 0.5px solid var(--border-2);
+}
 
-.report-issue-progress-hitarea {
-  display: block;
-  width: calc(100% - 24px);
-  margin-top: 10px;
-  margin-left: 24px;
-  padding: 4px 0 4px 14px;
-  background: none;
-  border-top: none; border-right: none; border-bottom: none;
-  border-left: 2px solid var(--surface-4);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-}
 .report-issue-progress-empty { font-size: 12px; color: var(--ink-5); padding: 4px 0; }
-.report-issue-progress-row {
+
+/* ── Timeline thread ── */
+.report-issue-timeline { display: flex; flex-direction: column; }
+.report-issue-tl-item {
   display: flex;
-  gap: 12px;
+  gap: 0;
   align-items: flex-start;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border-2);
+  position: relative;
 }
-.report-issue-progress-row:last-child { border-bottom: none; }
-.report-issue-progress-date { width: 112px; font-size: 11px; color: var(--ink-4); flex-shrink: 0; padding-top: 2px; }
-.report-issue-progress-copy { flex: 1; min-width: 0; }
-.report-issue-progress-title { font-size: 13px; font-weight: 500; color: var(--ink); }
+
+/* Gutter: holds dot + vertical line */
+.report-issue-tl-gutter {
+  width: 20px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 12px;
+}
+.report-issue-tl-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+  z-index: 1;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.report-issue-tl-dot.is-this-week {
+  background: var(--blue);
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--blue-light);
+}
+.report-issue-tl-line {
+  width: 1.5px;
+  flex: 1;
+  min-height: 12px;
+  background: var(--border);
+  margin-top: 3px;
+}
+
+/* Content body */
+.report-issue-tl-body {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 0 10px 10px;
+}
+.report-issue-tl-item.is-last .report-issue-tl-body { padding-bottom: 2px; }
+
+.report-issue-progress-when {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+.report-issue-progress-date-label {
+  font-size: 11px;
+  color: var(--ink-4);
+}
+.report-issue-this-week-badge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--blue-light);
+  color: var(--blue);
+  border: 0.5px solid var(--blue);
+  display: inline-block;
+}
+.report-issue-progress-title { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.45; }
 .report-issue-progress-detail { font-size: 12px; color: var(--ink-3); margin-top: 3px; line-height: 1.6; }
-.report-issue-progress-author { font-size: 11px; color: var(--ink-5); margin-top: 4px; }
+.report-issue-progress-author { font-size: 11px; color: var(--ink-5); margin-top: 3px; }
 
 /* Milestone table */
 .report-milestone-table tbody tr { transition: background .12s ease, box-shadow .12s ease; }

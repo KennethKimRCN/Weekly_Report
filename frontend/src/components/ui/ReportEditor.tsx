@@ -1531,6 +1531,13 @@ function ReportIssueCard({
 
   const isEditingAny = addingProgress || editingProgressId !== null
 
+  // Derive status bar color from issue status
+  const statusBarColor =
+    issue.status === '완료' ? 'var(--green)' :
+    issue.status === '취소' ? 'var(--ink-5)' :
+    issue.status === '진행중' ? 'var(--blue)' :
+    'var(--ink-5)'
+
   return (
     <div className="report-issue-card" id={`report-issue-${issue.id}`}>
       <style>{`
@@ -1540,23 +1547,19 @@ function ReportIssueCard({
           100% { background: transparent; }
         }
         @keyframes progress-slide-in {
-          0%   { opacity: 0; transform: translateY(-6px); }
+          0%   { opacity: 0; transform: translateY(-4px); }
           100% { opacity: 1; transform: translateY(0); }
         }
         @keyframes progress-slide-out {
           0%   { opacity: 1; transform: translateY(0); }
-          100% { opacity: 0; transform: translateY(-6px); }
+          100% { opacity: 0; transform: translateY(-4px); }
         }
       `}</style>
+
+      {/* ── Header: status bar + content + toggle ── */}
       <div className="report-issue-row">
-        <button
-          className="report-issue-toggle"
-          onClick={() => setExpanded((v) => !v)}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s' }}>
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
+        {/* Left-edge status bar */}
+        <div className="report-issue-status-bar" style={{ background: statusBarColor }} />
 
         <button
           type="button"
@@ -1571,182 +1574,184 @@ function ReportIssueCard({
             <span className={`chip ${statusChip}`} style={{ fontSize: 10 }}>{issue.status}</span>
           </div>
           {issue.details && <div className="report-issue-summary">{issue.details}</div>}
-          <div className="report-issue-meta">
-            {issue.start_date}
-            {issue.end_date ? ` ~ ${issue.end_date}` : ''}
+
+          {/* Compact date chips */}
+          <div className="report-issue-meta" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span className="report-issue-date-chip">{issue.start_date}</span>
+            {issue.end_date && (
+              <>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ color: 'var(--ink-5)', flexShrink: 0 }}>
+                  <line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" strokeWidth="1.2"/>
+                  <polyline points="6 2 9 5 6 8" fill="none" stroke="currentColor" strokeWidth="1.2"/>
+                </svg>
+                <span className="report-issue-date-chip">{issue.end_date}</span>
+              </>
+            )}
+            {!readOnly && (
+              <select
+                className="status-select"
+                value={issue.status}
+                disabled={statusSaving}
+                onChange={(e) => { e.stopPropagation(); handleStatusChange(e.target.value) }}
+                onClick={(e) => e.stopPropagation()}
+                style={{ fontSize: 11, marginLeft: 4 }}
+              >
+                {['초안', '진행중', '완료', '취소'].map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            )}
           </div>
         </button>
 
-        {!readOnly && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
-            <select
-              className="status-select"
-              value={issue.status}
-              disabled={statusSaving}
-              onChange={(e) => handleStatusChange(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              style={{ fontSize: 11 }}
-            >
-              {['초안', '진행중', '완료', '취소'].map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-        )}
+        {/* Collapse toggle — right side */}
+        <button
+          className="report-issue-toggle"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s' }}>
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
       </div>
 
+      {/* ── Progress timeline ── */}
       <div className={`report-issue-progress-collapse ${expanded ? 'is-expanded' : ''}`}>
-        {/* progress list */}
-        {displayedProgresses.length === 0 && !isEditingAny ? (
-          <div className="report-issue-progress-empty" style={{ paddingBottom: readOnly ? 0 : 4 }}>
-            진행내역이 없습니다.
-          </div>
-        ) : (
-          displayedProgresses.map((progress) => {
-            const isThisWeek = currentWeekProgressIds.has(progress.id)
-            const isHighlighted = showAllProgress && isThisWeek
-            const isExtra = !isThisWeek
-            const isAnimatingIn = animatingInIds.has(progress.id)
-            const isAnimatingOut = collapsingExtras && isExtra
-            return editingProgressId === progress.id ? (
-              <InlineProgressForm
-                key={progress.id}
-                form={progForm}
-                onChange={setProgForm}
-                onSave={saveProgress}
-                onCancel={cancelProgressForm}
-                saving={progSaving}
-              />
-            ) : (
-              <div
-                key={progress.id}
-                className="report-issue-progress-row"
-                style={{
-                  position: 'relative',
-                  transition: 'opacity 0.28s ease, max-height 0.28s ease, margin 0.28s ease, padding 0.28s ease',
-                  ...(removingId === progress.id ? {
-                    opacity: 0,
-                    maxHeight: 0,
-                    overflow: 'hidden',
-                    marginTop: 0,
-                    marginBottom: 0,
-                    paddingTop: 0,
-                    paddingBottom: 0,
-                  } : flashingId === progress.id ? {
-                    animation: 'progress-flash 1.8s ease forwards',
-                  } : isAnimatingIn ? {
-                    animation: 'progress-slide-in 0.32s ease forwards',
-                  } : isAnimatingOut ? {
-                    animation: 'progress-slide-out 0.26s ease forwards',
-                  } : isHighlighted ? {
-                    background: 'var(--blue-light, rgba(26,115,232,0.06))',
-                    borderLeft: '2.5px solid var(--blue)',
-                    marginLeft: -8,
-                    paddingLeft: 8,
-                    borderRadius: 4,
-                  } : showAllProgress && !isThisWeek ? {
-                    opacity: 0.6,
-                  } : {}),
+        <div className="report-issue-progress-inner">
+          {displayedProgresses.length === 0 && !isEditingAny ? (
+            <div className="report-issue-progress-empty" style={{ paddingBottom: readOnly ? 0 : 4 }}>
+              진행내역이 없습니다.
+            </div>
+          ) : (
+            <div className="report-issue-timeline">
+              {displayedProgresses.map((progress, idx) => {
+                const isThisWeek = currentWeekProgressIds.has(progress.id)
+                const isExtra = !isThisWeek
+                const isAnimatingIn = animatingInIds.has(progress.id)
+                const isAnimatingOut = collapsingExtras && isExtra
+                const isLast = idx === displayedProgresses.length - 1
+
+                return editingProgressId === progress.id ? (
+                  <InlineProgressForm
+                    key={progress.id}
+                    form={progForm}
+                    onChange={setProgForm}
+                    onSave={saveProgress}
+                    onCancel={cancelProgressForm}
+                    saving={progSaving}
+                  />
+                ) : (
+                  <div
+                    key={progress.id}
+                    className={`report-issue-tl-item${isLast ? ' is-last' : ''}`}
+                    style={{
+                      transition: 'opacity 0.28s ease, max-height 0.28s ease, margin 0.28s ease, padding 0.28s ease',
+                      ...(removingId === progress.id ? {
+                        opacity: 0, maxHeight: 0, overflow: 'hidden',
+                        marginTop: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0,
+                      } : flashingId === progress.id ? {
+                        animation: 'progress-flash 1.8s ease forwards',
+                      } : isAnimatingIn ? {
+                        animation: 'progress-slide-in 0.32s ease forwards',
+                      } : isAnimatingOut ? {
+                        animation: 'progress-slide-out 0.26s ease forwards',
+                      } : !isThisWeek && showAllProgress ? {
+                        opacity: 0.55,
+                      } : {}),
+                    }}
+                  >
+                    {/* Timeline dot + line */}
+                    <div className="report-issue-tl-gutter">
+                      {!isLast && <div className="report-issue-tl-line" />}
+                      <div className={`report-issue-tl-dot${isThisWeek ? ' is-this-week' : ''}`} />
+                    </div>
+
+                    {/* Content */}
+                    <div className="report-issue-tl-body">
+                      <div className="report-issue-progress-when">
+                        <span className="report-issue-progress-date-label">
+                          {progress.start_date}
+                          {progress.end_date && progress.end_date !== progress.start_date ? ` ~ ${progress.end_date}` : ''}
+                        </span>
+                        {isThisWeek && (
+                          <span className="report-issue-this-week-badge">이번 주</span>
+                        )}
+                      </div>
+                      <div className="report-issue-progress-title">{progress.title}</div>
+                      {progress.details && <div className="report-issue-progress-detail">{progress.details}</div>}
+                      {progress.author_name && <div className="report-issue-progress-author">{progress.author_name}</div>}
+
+                      {!readOnly && !isEditingAny && (
+                        <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                          {confirmingDeleteId === progress.id ? (
+                            <>
+                              <span style={{ fontSize: 11, color: 'var(--red)', whiteSpace: 'nowrap' }}>삭제할까요?</span>
+                              <button className="btn btn-danger btn-sm" style={{ fontSize: 11, padding: '2px 8px' }}
+                                onClick={() => deleteProgress(progress.id)}>확인</button>
+                              <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 8px' }}
+                                onClick={() => setConfirmingDeleteId(null)}>취소</button>
+                            </>
+                          ) : (
+                            <>
+                              <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 6px' }}
+                                onClick={() => openEditProgress(progress)}>수정</button>
+                              <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 6px', color: 'var(--red)' }}
+                                onClick={() => setConfirmingDeleteId(progress.id)}>삭제</button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {addingProgress && (
+            <InlineProgressForm
+              form={progForm}
+              onChange={setProgForm}
+              onSave={saveProgress}
+              onCancel={cancelProgressForm}
+              saving={progSaving}
+            />
+          )}
+
+          {/* footer row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 6 }}>
+            {!readOnly && !isEditingAny && (
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={openAddProgress}>
+                + 진행내역 추가
+              </button>
+            )}
+            {hasMore && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 11, marginLeft: 'auto', color: showAllProgress ? 'var(--blue)' : undefined }}
+                onClick={() => {
+                  if (!showAllProgress) {
+                    setShowAllProgress(true)
+                    const extraIds = new Set(
+                      localFullProgresses
+                        .filter((p) => !currentWeekProgressIds.has(p.id))
+                        .map((p) => p.id)
+                    )
+                    setAnimatingInIds(extraIds)
+                    setTimeout(() => setAnimatingInIds(new Set()), 400)
+                  } else {
+                    setCollapsingExtras(true)
+                    setTimeout(() => {
+                      setShowAllProgress(false)
+                      setCollapsingExtras(false)
+                    }, 280)
+                  }
                 }}
               >
-                <div className="report-issue-progress-date">
-                  <div>{progress.start_date}{progress.end_date && progress.end_date !== progress.start_date ? ` ~ ${progress.end_date}` : ''}</div>
-                  {isHighlighted && (
-                    <span style={{
-                      fontSize: 10,
-                      fontWeight: 600,
-                      padding: '1px 6px',
-                      borderRadius: 20,
-                      background: 'rgba(26,115,232,0.12)',
-                      color: 'var(--blue)',
-                      border: '1px solid var(--blue)',
-                      display: 'inline-block',
-                      marginTop: 2,
-                    }}>이번 주</span>
-                  )}
-                </div>
-                <div className="report-issue-progress-copy">
-                  <div className="report-issue-progress-title">{progress.title}</div>
-                  {progress.details && <div className="report-issue-progress-detail">{progress.details}</div>}
-                  {progress.author_name && <div className="report-issue-progress-author">{progress.author_name}</div>}
-                </div>
-                {!readOnly && !isEditingAny && (
-                  <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', alignItems: 'center', flexShrink: 0 }}>
-                    {confirmingDeleteId === progress.id ? (
-                      <>
-                        <span style={{ fontSize: 11, color: 'var(--red)', whiteSpace: 'nowrap' }}>삭제할까요?</span>
-                        <button
-                          className="btn btn-danger btn-sm"
-                          style={{ fontSize: 11, padding: '2px 8px' }}
-                          onClick={() => deleteProgress(progress.id)}
-                        >확인</button>
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          style={{ fontSize: 11, padding: '2px 8px' }}
-                          onClick={() => setConfirmingDeleteId(null)}
-                        >취소</button>
-                      </>
-                    ) : (
-                      <>
-                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 6px' }} onClick={() => openEditProgress(progress)}>수정</button>
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          style={{ fontSize: 11, padding: '2px 6px', color: 'var(--red)' }}
-                          onClick={() => setConfirmingDeleteId(progress.id)}
-                        >삭제</button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })
-        )}
-
-        {addingProgress && (
-          <InlineProgressForm
-            form={progForm}
-            onChange={setProgForm}
-            onSave={saveProgress}
-            onCancel={cancelProgressForm}
-            saving={progSaving}
-          />
-        )}
-
-        {/* footer row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
-          {!readOnly && !isEditingAny && (
-            <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={openAddProgress}>
-              + 진행내역 추가
-            </button>
-          )}
-          {hasMore && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ fontSize: 11, marginLeft: 'auto', color: showAllProgress ? 'var(--blue)' : undefined }}
-              onClick={() => {
-                if (!showAllProgress) {
-                  // Expanding: show extras, then mark them for fade-in
-                  setShowAllProgress(true)
-                  const extraIds = new Set(
-                    localFullProgresses
-                      .filter((p) => !currentWeekProgressIds.has(p.id))
-                      .map((p) => p.id)
-                  )
-                  setAnimatingInIds(extraIds)
-                  setTimeout(() => setAnimatingInIds(new Set()), 400)
-                } else {
-                  // Collapsing: play fade-out on extras, then hide
-                  setCollapsingExtras(true)
-                  setTimeout(() => {
-                    setShowAllProgress(false)
-                    setCollapsingExtras(false)
-                  }, 280)
-                }
-              }}
-            >
-              {showAllProgress ? '이번 주만 보기' : `전체보기 (${localFullProgresses.length}건)`}
-            </button>
-          )}
+                {showAllProgress ? '이번 주만 보기' : `전체보기 (${localFullProgresses.length}건)`}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -47,9 +47,9 @@ def _get_llm_settings(conn) -> dict:
 def _fetch_models(settings: dict) -> list[str]:
     req = request.Request(
         f"{settings['base_url'].rstrip('/')}/models",
-        headers={"Content-Type": "application/json"},
         method="GET",
     )
+    req.add_unredirected_header("Content-Type", "application/json")
     with request.urlopen(req, timeout=min(10, float(settings["timeout_seconds"]))) as response:
         raw = response.read().decode("utf-8")
     data = json.loads(raw)
@@ -261,11 +261,19 @@ def _call_llm(payload: dict, settings: dict) -> dict:
     req = request.Request(
         f"{settings['base_url'].rstrip('/')}/chat/completions",
         data=body,
-        headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with request.urlopen(req, timeout=float(settings["timeout_seconds"])) as response:
-        raw = response.read().decode("utf-8")
+    # urllib capitalizes only the first letter of header names passed to the constructor
+    # (e.g. "Content-Type" becomes "Content-type"), which causes LM Studio to reject the
+    # request. add_unredirected_header() bypasses that normalization and sends the exact
+    # casing specified.
+    req.add_unredirected_header("Content-Type", "application/json")
+    try:
+        with request.urlopen(req, timeout=float(settings["timeout_seconds"])) as response:
+            raw = response.read().decode("utf-8")
+    except error.HTTPError as e:
+        raw_err = e.read().decode("utf-8", errors="replace")
+        raise ValueError(f"LM Studio returned HTTP {e.code}: {raw_err[:300]}") from e
     data = json.loads(raw)
     choices = data.get("choices") or []
     if not choices:
