@@ -204,14 +204,48 @@ export interface SubmissionStat {
   approved: number
 }
 
+export interface DashboardScheduleItem {
+  id: number
+  start_date: string
+  end_date: string
+  location: string | null
+  details: string | null
+  type_name: string
+}
+
+export interface DashboardIssueUpdate {
+  id: number
+  progress_title: string
+  start_date: string
+  updated_at: string
+  issue_title: string
+  status: string
+  priority: string
+  project_name: string
+  issue_id: number
+  project_id: number
+}
+
+export interface DashboardTeamMember {
+  id: number
+  name: string
+  report_id: number | null
+  status_id: number | null
+  status_name: string | null
+}
+
+export interface DashboardTeam {
+  team_id: number
+  team_name: string
+  members: DashboardTeamMember[]
+}
+
 export interface DashboardData {
   week_start: string
-  my_report: ReportSummary | null
-  team_reports: ReportSummary[]
-  pending_approvals: { id: number; week_start: string; owner_name: string; status_name: string }[]
-  blockers: { project_name: string; remarks: string | null; reporter: string; week_start: string }[]
-  unread_notifications: number
-  submission_stats: SubmissionStat[]
+  current_user_id: number
+  schedule: DashboardScheduleItem[]
+  issue_updates: DashboardIssueUpdate[]
+  team_status: DashboardTeam[]
 }
 
 // ── Lookups ───────────────────────────────────────────────────────────────

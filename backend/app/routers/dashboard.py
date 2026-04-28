@@ -12,83 +12,107 @@ router = APIRouter(prefix="/api", tags=["dashboard"])
 @router.get("/dashboard")
 def dashboard(current_user=Depends(get_current_user)):
     today = date.today()
-    ws = sunday_of_week(today)
-    week_start_str = ws.isoformat()
+    week_start_str = sunday_of_week(today).isoformat()
+    lookahead = (today + timedelta(days=14)).isoformat()
+    today_str = today.isoformat()
+    since_str = (today - timedelta(days=7)).isoformat()
+    uid = current_user["id"]
+
     _ensure_current_week_reports()
 
     with get_db() as conn:
-        my_report = conn.execute(
-            """SELECT r.*, rs.name as status_name,
-                      COALESCE(rs2.total_projects,0) as total_projects,
-                      COALESCE(rs2.risk_count,0) as risk_count,
-                      COALESCE(rs2.blocker_count,0) as blocker_count,
-                      COALESCE(rs2.avg_completion,0) as avg_completion
-               FROM reports r
-               JOIN report_status rs ON rs.id=r.status_id
-               LEFT JOIN report_summaries rs2 ON rs2.report_id=r.id
-               WHERE r.owner_id=? AND r.week_start=? AND r.is_deleted=0""",
-            (current_user["id"], week_start_str),
-        ).fetchone()
-
-        team_reports = conn.execute(
-            """SELECT r.*, u.name as owner_name, rs.name as status_name,
-                      COALESCE(rs2.total_projects,0) as total_projects,
-                      COALESCE(rs2.risk_count,0) as risk_count,
-                      COALESCE(rs2.blocker_count,0) as blocker_count,
-                      COALESCE(rs2.avg_completion,0) as avg_completion
-               FROM reports r
-               JOIN users u ON u.id=r.owner_id
-               JOIN report_status rs ON rs.id=r.status_id
-               LEFT JOIN report_summaries rs2 ON rs2.report_id=r.id
-               WHERE r.week_start=? AND r.is_deleted=0 AND u.is_deleted=0
-               ORDER BY rs.sort_order DESC, u.name""",
-            (week_start_str,),
+        # ── 1. Personal schedule (next 14 days) ──────────────────────────
+        schedule = conn.execute(
+            """SELECT ps.id, ps.start_date, ps.end_date, ps.location, ps.details,
+                      st.name as type_name
+               FROM personal_schedule ps
+               JOIN schedule_type st ON st.id = ps.type_id
+               WHERE ps.user_id = ?
+                 AND ps.start_date <= ? AND ps.end_date >= ?
+               ORDER BY ps.start_date""",
+            (uid, lookahead, today_str),
         ).fetchall()
 
-        pending = conn.execute(
-            """SELECT r.id, r.week_start, u.name as owner_name, rs.name as status_name
-               FROM reports r
-               JOIN users u ON u.id=r.owner_id
-               JOIN report_status rs ON rs.id=r.status_id
-               WHERE r.status_id=2 AND r.is_deleted=0
-               ORDER BY r.submitted_at"""
-        ).fetchall()
-
-        blockers = conn.execute(
-            """SELECT p.project_name, rp.remarks, u.name as reporter, r.week_start
-               FROM report_projects rp
-               JOIN projects p ON p.id=rp.project_id
-               JOIN reports r ON r.id=rp.report_id
-               JOIN users u ON u.id=r.owner_id
-               WHERE rp.risk_level='blocker' AND r.is_deleted=0 AND r.week_start=?""",
-            (week_start_str,),
-        ).fetchall()
-
-        notif_count = conn.execute(
-            "SELECT COUNT(*) as c FROM notifications "
-            "WHERE user_id=? AND is_read=0 AND is_deleted=0",
-            (current_user["id"],),
-        ).fetchone()["c"]
-
-        weeks = [(ws - timedelta(weeks=i)).isoformat() for i in range(7, -1, -1)]
-        submission_stats = [
-            conn.execute(
-                """SELECT ? as week_start,
-                          COUNT(*) as total,
-                          SUM(CASE WHEN status_id>=2 THEN 1 ELSE 0 END) as submitted,
-                          SUM(CASE WHEN status_id=3  THEN 1 ELSE 0 END) as approved
-                   FROM reports WHERE week_start=? AND is_deleted=0""",
-                (w, w),
-            ).fetchone()
-            for w in weeks
+        # ── 2. Recent issue updates from my projects (last 7 days) ───────
+        # Collect all project ids the user has ever reported on
+        my_project_ids = [
+            row["project_id"]
+            for row in conn.execute(
+                """SELECT DISTINCT rp.project_id
+                   FROM report_projects rp
+                   JOIN reports r ON r.id = rp.report_id
+                   WHERE r.owner_id = ? AND r.is_deleted = 0""",
+                (uid,),
+            ).fetchall()
         ]
 
+        issue_updates = []
+        if my_project_ids:
+            placeholders = ",".join("?" * len(my_project_ids))
+            # Latest progress entry per issue only (no duplicate issue rows)
+            issue_updates = conn.execute(
+                f"""SELECT pip.id, pip.title as progress_title,
+                           pip.start_date, pip.updated_at,
+                           pi.title as issue_title, pi.status, pi.priority,
+                           p.project_name,
+                           pi.id as issue_id, p.id as project_id
+                    FROM project_issue_progress pip
+                    JOIN project_issues pi ON pi.id = pip.issue_id
+                    JOIN projects p ON p.id = pi.project_id
+                    WHERE pi.project_id IN ({placeholders})
+                      AND pip.is_deleted = 0
+                      AND pi.is_deleted  = 0
+                      AND pip.updated_at >= ?
+                      AND pip.id = (
+                          SELECT id FROM project_issue_progress
+                          WHERE issue_id = pip.issue_id AND is_deleted = 0
+                          ORDER BY updated_at DESC LIMIT 1
+                      )
+                    ORDER BY pip.updated_at DESC
+                    LIMIT 15""",
+                (*my_project_ids, since_str),
+            ).fetchall()
+
+        # ── 3. Team status (current week report status per team member) ──
+        # Find all teams the current user belongs to
+        user_teams = conn.execute(
+            """SELECT t.id as team_id, t.name as team_name, utr.role
+               FROM user_team_roles utr
+               JOIN teams t ON t.id = utr.team_id
+               WHERE utr.user_id = ?
+               ORDER BY utr.primary_team DESC, t.name""",
+            (uid,),
+        ).fetchall()
+
+        team_status = []
+        for team in user_teams:
+            members = conn.execute(
+                """SELECT u.id, u.name,
+                          r.id        as report_id,
+                          r.status_id,
+                          rs.name     as status_name
+                   FROM user_team_roles utr
+                   JOIN users u ON u.id = utr.user_id
+                   LEFT JOIN reports r
+                     ON r.owner_id = u.id
+                    AND r.week_start = ?
+                    AND r.is_deleted = 0
+                   LEFT JOIN report_status rs ON rs.id = r.status_id
+                   WHERE utr.team_id = ? AND u.is_deleted = 0
+                   ORDER BY u.name""",
+                (week_start_str, team["team_id"]),
+            ).fetchall()
+
+            team_status.append({
+                "team_id":   team["team_id"],
+                "team_name": team["team_name"],
+                "members":   [dict(m) for m in members],
+            })
+
     return {
-        "week_start": week_start_str,
-        "my_report": my_report,
-        "team_reports": team_reports,
-        "pending_approvals": pending,
-        "blockers": blockers,
-        "unread_notifications": notif_count,
-        "submission_stats": submission_stats,
+        "week_start":      week_start_str,
+        "current_user_id": uid,
+        "schedule":        [dict(s) for s in schedule],
+        "issue_updates":   [dict(i) for i in issue_updates],
+        "team_status":     team_status,
     }

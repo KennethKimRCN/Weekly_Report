@@ -5,6 +5,7 @@
 @media (max-width: 960px) {
   .grid-4 { grid-template-columns: 1fr 1fr; }
   .grid-2 { grid-template-columns: 1fr; }
+  .dashboard-grid { grid-template-columns: 1fr !important; }
   .editor-grid-4 { grid-template-columns: 1fr 1fr; }
   .editor-grid-3 { grid-template-columns: 1fr; }
   .schedule-col-headers, .schedule-row { grid-template-columns: 1fr 120px 120px 36px; }
