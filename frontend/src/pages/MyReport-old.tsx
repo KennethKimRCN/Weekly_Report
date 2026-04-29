@@ -428,7 +428,6 @@ export default function MyReport() {
   const { user } = useAuthStore()
   const [week, setWeek] = useState(sundayOfToday())
   const [report, setReport] = useState<ReportFull | null | undefined>(undefined)
-  const [prevReport, setPrevReport] = useState<ReportFull | null>(null)
   const [notFound, setNotFound] = useState(false)
   const dirtyCountRef = useRef(0)
 
@@ -439,22 +438,12 @@ export default function MyReport() {
   async function load(ws: string) {
     if (!user) return
     setReport(undefined)
-    setPrevReport(null)
     setNotFound(false)
     try {
       const res = await reportsApi.list({ owner_id: user.id, week_start: ws })
       if (!res.data.length) { setNotFound(true); return }
       const full = await reportsApi.get(res.data[0].id)
       setReport(full.data)
-      // Load previous week's report for issue comparison
-      try {
-        const prevWeek = shiftWeek(ws, -1)
-        const prevRes = await reportsApi.list({ owner_id: user.id, week_start: prevWeek })
-        if (prevRes.data.length) {
-          const prevFull = await reportsApi.get(prevRes.data[0].id)
-          setPrevReport(prevFull.data)
-        }
-      } catch { /* prev report is optional */ }
     } catch {
       setNotFound(true)
     }
@@ -520,7 +509,6 @@ export default function MyReport() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <ReportEditor
               report={report}
-              prevReport={prevReport}
               readOnly={false}
               isAdmin={user?.is_admin === 1}
               onRefresh={() => load(week)}

@@ -12,6 +12,7 @@ import type { ProgressInput } from '../../api'
 
 interface Props {
   report: ReportFull
+  prevReport?: ReportFull | null
   readOnly?: boolean
   isAdmin?: boolean
   onRefresh: () => void
@@ -70,7 +71,7 @@ const MILESTONE_STATUS_CHIP: Record<string, string> = {
   cancelled: 'chip-cancelled',
 }
 
-export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefresh, onDirtyChange }: Props) {
+export function ReportEditor({ report, prevReport, readOnly = false, isAdmin = false, onRefresh, onDirtyChange }: Props) {
   const { toast } = useToast()
   const { user } = useAuthStore()
   const locked = report.is_locked === 1 && !isAdmin
@@ -102,6 +103,32 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
     0,
   )
 
+  // Compute new issues: issues in current report not present in prev report (by title)
+  const prevIssueTitles = useMemo(() => {
+    if (!prevReport) return new Set<string>()
+    return new Set(prevReport.projects.flatMap(p => p.issue_items.map(i => i.title)))
+  }, [prevReport])
+
+  const newIssues = useMemo(() =>
+    report.projects.flatMap(p => p.issue_items.filter(i => !prevIssueTitles.has(i.title))),
+    [report.projects, prevIssueTitles]
+  )
+
+  const completedIssues = useMemo(() =>
+    report.projects.flatMap(p => p.issue_items.filter(i => i.status === '완료')),
+    [report.projects]
+  )
+
+  // All progress items for tooltip
+  const allProgressItems = useMemo(() =>
+    report.projects.flatMap(p =>
+      p.issue_items.flatMap(i =>
+        i.issue_progresses.map(prog => ({ projectName: p.project_name, issueTitle: i.title, title: prog.title }))
+      )
+    ),
+    [report.projects]
+  )
+
   const groupedProjects = useMemo(() => {
     const groups = new Map<string, ReportProject[]>()
     for (const project of report.projects) {
@@ -120,7 +147,6 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
   const [collapsedSolutions, setCollapsedSolutions] = useState<Record<string, boolean>>({})
   const reportMetrics = [
     { num: report.projects.length, lbl: '프로젝트' },
-    { num: totalSchedules, lbl: '마일스톤' },
     { num: totalIssues, lbl: '이슈' },
     { num: totalProgress, lbl: '진행내역' },
   ]
@@ -294,12 +320,68 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
           </div>
           {/* Inline metric pills */}
           <div className="report-metrics-inline">
-            {reportMetrics.map(({ num, lbl }) => (
-              <div key={lbl} className="report-metric-pill">
-                <span className="report-metric-num">{num}</span>
-                <span className="report-metric-lbl">{lbl}</span>
+            {/* 프로젝트 badge — tooltip lists project names */}
+            <div className="report-metric-pill report-metric-pill--hoverable">
+              <span className="report-metric-num">{report.projects.length}</span>
+              <span className="report-metric-lbl">프로젝트</span>
+              {report.projects.length > 0 && (
+                <div className="report-metric-tooltip">
+                  {report.projects.map(p => (
+                    <div key={p.project_id} className="report-metric-tooltip-item">{p.project_name}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 이슈 badge — inline sub-stats + tooltip details */}
+            <div className="report-metric-pill report-metric-pill--hoverable">
+              <span className="report-metric-num">{totalIssues}</span>
+              <span className="report-metric-lbl">이슈</span>
+              {(newIssues.length > 0 || completedIssues.length > 0) && (
+                <span className="report-metric-issue-stats">
+                  {newIssues.length > 0 && (
+                    <span className="report-metric-issue-tag report-metric-issue-tag--new">+{newIssues.length} 신규</span>
+                  )}
+                  {completedIssues.length > 0 && (
+                    <span className="report-metric-issue-tag report-metric-issue-tag--done">{completedIssues.length} 완료</span>
+                  )}
+                </span>
+              )}
+              <div className="report-metric-tooltip">
+                <div className="report-metric-tooltip-row">
+                  <span className="report-metric-tooltip-dot report-metric-tooltip-dot--new" />
+                  <span>신규 <strong>{newIssues.length}건</strong></span>
+                </div>
+                <div className="report-metric-tooltip-row">
+                  <span className="report-metric-tooltip-dot report-metric-tooltip-dot--done" />
+                  <span>완료 <strong>{completedIssues.length}건</strong></span>
+                </div>
+                {newIssues.length > 0 && (
+                  <>
+                    <div className="report-metric-tooltip-divider" />
+                    {newIssues.map(i => (
+                      <div key={i.id} className="report-metric-tooltip-item report-metric-tooltip-item--new">+ {i.title}</div>
+                    ))}
+                  </>
+                )}
               </div>
-            ))}
+            </div>
+
+            {/* 진행내역 badge — tooltip lists progress titles */}
+            <div className="report-metric-pill report-metric-pill--hoverable">
+              <span className="report-metric-num">{totalProgress}</span>
+              <span className="report-metric-lbl">진행내역</span>
+              {allProgressItems.length > 0 && (
+                <div className="report-metric-tooltip report-metric-tooltip--wide">
+                  {allProgressItems.map((prog, idx) => (
+                    <div key={idx} className="report-metric-tooltip-item">
+                      <span className="report-metric-tooltip-proj">{prog.projectName}</span>
+                      <span>{prog.title}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -368,27 +450,51 @@ export function ReportEditor({ report, readOnly = false, isAdmin = false, onRefr
           </div>
         </div>
         {generatedSummary ? (
-          <div className="panel-body panel-body-compact">
-            <div className="report-generated-summary">
-              <div className="report-generated-summary-head">
-                <span className="report-generated-summary-kicker">
-                  {generatedSummary.source === 'llm' ? `Generated · ${generatedSummary.model ?? 'LLM'}` : 'Fallback Summary'}
-                </span>
-                {generatedSummary.previous_week_start && (
-                  <span className="report-generated-summary-meta">
-                    지난 주 비교: {generatedSummary.previous_week_start}
-                  </span>
-                )}
-              </div>
-              <p className="report-generated-summary-body">{renderSummaryText(generatedSummary.summary)}</p>
-              {generatedSummary.highlights.length > 0 && (
-                <div className="report-generated-summary-highlights">
+          <div className={`rgs-article${generatedSummary.source === 'fallback' ? ' rgs-article--fallback' : ''}`}>
+            {/* Dateline bar */}
+            <div className="rgs-dateline">
+              <span className="rgs-dateline-week">{report.week_start} 주간 보고서</span>
+              {generatedSummary.previous_week_start && (
+                <span className="rgs-dateline-compare">vs {generatedSummary.previous_week_start}</span>
+              )}
+            </div>
+
+            {/* Lead paragraph */}
+            <p className="rgs-lead">{renderSummaryText(generatedSummary.summary)}</p>
+
+            {/* Highlights as article callouts */}
+            {generatedSummary.highlights.length > 0 && (
+              <>
+                <div className="rgs-section-rule">
+                  <span className="rgs-section-label">주요 내용</span>
+                </div>
+                <div className="rgs-highlights">
                   {generatedSummary.highlights.map((item, index) => (
-                    <div key={`${item}-${index}`} className="report-generated-summary-item">
-                      {renderSummaryText(item)}
+                    <div key={`${item}-${index}`} className="rgs-highlight-item">
+                      <span className="rgs-highlight-index">{String(index + 1).padStart(2, '0')}</span>
+                      <span className="rgs-highlight-text">{renderSummaryText(item)}</span>
                     </div>
                   ))}
                 </div>
+              </>
+            )}
+
+            {/* Byline */}
+            <div className="rgs-byline">
+              {generatedSummary.source === 'llm' ? (
+                <>
+                  <svg className="rgs-byline-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+                  </svg>
+                  <span>AI 생성 · {generatedSummary.model ?? 'LLM'}</span>
+                </>
+              ) : (
+                <>
+                  <svg className="rgs-byline-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  <span>자동 집계 요약 (AI 미사용)</span>
+                </>
               )}
             </div>
           </div>
@@ -588,6 +694,45 @@ function ProjectCard({
   const [projectExpanded, setProjectExpanded] = useState(false)
   const [milestoneExpanded, setMilestoneExpanded] = useState(true)
   const [issueExpanded, setIssueExpanded] = useState(true)
+  const [addingIssue, setAddingIssue] = useState(false)
+  const [issueForm, setIssueForm] = useState<Partial<import('../../api').IssueInput>>({})
+  const [issueSaving, setIssueSaving] = useState(false)
+
+  function openAddIssue() {
+    const today = new Date().toISOString().slice(0, 10)
+    setIssueForm({ title: '', status: '진행중', priority: 'normal', start_date: today, end_date: null, details: null })
+    setAddingIssue(true)
+  }
+
+  function cancelIssueForm() {
+    setAddingIssue(false)
+    setIssueForm({})
+  }
+
+  async function saveIssue() {
+    if (!issueForm.title?.trim() || !issueForm.start_date) {
+      toast('이슈 제목과 시작일을 입력해 주세요.', 'error')
+      return
+    }
+    setIssueSaving(true)
+    try {
+      await projectRecordApi.addIssue(rp.project_id, {
+        title: issueForm.title.trim(),
+        status: issueForm.status ?? '진행중',
+        priority: issueForm.priority ?? 'normal',
+        start_date: issueForm.start_date,
+        end_date: issueForm.end_date ?? null,
+        details: issueForm.details ?? null,
+      })
+      cancelIssueForm()
+      toast('이슈를 추가했습니다.', 'success')
+      onRefresh()
+    } catch (e: any) {
+      toast(e.response?.data?.detail ?? '이슈를 저장하지 못했습니다.', 'error')
+    } finally {
+      setIssueSaving(false)
+    }
+  }
 
   function markDirty() {
     if (!isDirty) {
@@ -766,7 +911,7 @@ function ProjectCard({
               <div className="project-detail-value">
                 <div className={`report-collapse-panel report-collapse-panel--nested ${issueExpanded ? 'is-expanded' : ''}`}>
                   <div className="report-collapse-panel-inner">
-                    {rp.issue_items.length === 0 ? (
+                    {rp.issue_items.length === 0 && !addingIssue ? (
                       <div style={{ fontSize: 12, color: 'var(--ink-5)' }}>이번 주에 반영된 이슈 진행내역이 없습니다.</div>
                     ) : (
                       <div className="report-issue-list">
@@ -779,6 +924,22 @@ function ProjectCard({
                             readOnly={readOnly}
                           />
                         ))}
+                      </div>
+                    )}
+                    {addingIssue && (
+                      <InlineIssueForm
+                        form={issueForm}
+                        onChange={setIssueForm}
+                        onSave={saveIssue}
+                        onCancel={cancelIssueForm}
+                        saving={issueSaving}
+                      />
+                    )}
+                    {!readOnly && !addingIssue && (
+                      <div style={{ paddingTop: rp.issue_items.length > 0 ? 6 : 2 }}>
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={openAddIssue}>
+                          + 이슈 추가
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1781,6 +1942,86 @@ function InlineProgressForm({
         style={{ fontSize: 12 }}
         autoFocus
       />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="date"
+          className="modal-search-input"
+          value={form.start_date ?? ''}
+          onChange={(e) => onChange({ ...form, start_date: e.target.value })}
+          style={{ fontSize: 12, flex: 1 }}
+        />
+        <input
+          type="date"
+          className="modal-search-input"
+          value={form.end_date ?? ''}
+          onChange={(e) => onChange({ ...form, end_date: e.target.value || null })}
+          style={{ fontSize: 12, flex: 1 }}
+          placeholder="종료일 (선택)"
+        />
+      </div>
+      <textarea
+        className="project-remarks-input"
+        rows={2}
+        placeholder="상세 내용 (선택)"
+        value={form.details ?? ''}
+        onChange={(e) => onChange({ ...form, details: e.target.value || null })}
+        style={{ fontSize: 12 }}
+      />
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+        <button className="btn btn-ghost btn-sm" onClick={onCancel} disabled={saving}>취소</button>
+        <button className="btn btn-primary btn-sm" onClick={onSave} disabled={saving}>
+          {saving ? '저장 중...' : '저장'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function InlineIssueForm({
+  form,
+  onChange,
+  onSave,
+  onCancel,
+  saving,
+}: {
+  form: Partial<import('../../api').IssueInput>
+  onChange: (f: Partial<import('../../api').IssueInput>) => void
+  onSave: () => void
+  onCancel: () => void
+  saving: boolean
+}) {
+  return (
+    <div style={{ background: 'var(--surface-2, #f8f9fa)', borderRadius: 6, padding: '10px 12px', margin: '6px 0', display: 'grid', gap: 8 }}>
+      <input
+        className="modal-search-input"
+        placeholder="이슈 제목 *"
+        value={form.title ?? ''}
+        onChange={(e) => onChange({ ...form, title: e.target.value })}
+        style={{ fontSize: 12 }}
+        autoFocus
+      />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <select
+          className="modal-search-input"
+          value={form.status ?? '진행중'}
+          onChange={(e) => onChange({ ...form, status: e.target.value })}
+          style={{ fontSize: 12, flex: 1 }}
+        >
+          <option value="진행중">진행중</option>
+          <option value="초안">초안</option>
+          <option value="완료">완료</option>
+          <option value="취소">취소</option>
+        </select>
+        <select
+          className="modal-search-input"
+          value={form.priority ?? 'normal'}
+          onChange={(e) => onChange({ ...form, priority: e.target.value })}
+          style={{ fontSize: 12, flex: 1 }}
+        >
+          <option value="normal">일반</option>
+          <option value="high">중요</option>
+        </select>
+      </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <input
           type="date"
